@@ -20,7 +20,7 @@
     {"contains": "cat notes.txt", "tool": "Bash"},
     {"contains": "wc -l notes.txt", "tool": "Bash", "subagent": true},
     {"contains": ".ssh/id_rsa", "tool": "Read"},
-    {"contains": ".env", "tool": "Read"},
+    {"contains": "/workspace/.env", "tool": "Read"},
     {"contains": "AKIAIOSFODNN7EXAMPLE"},
     {"contains": "install.sh | sh", "tool": "Bash"},
     {"contains": "base64 -d | sh", "tool": "Bash"},
