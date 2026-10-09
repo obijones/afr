@@ -22,7 +22,21 @@ const (
 	ToolUse                    // AI request to run a tool
 	ToolResult                 // what the tool returned
 	Skipped                    // a line too large to read; Bytes says how large
+	Notice                     // a harness notice: a safeguard stop, a model fallback, a warning
 )
+
+// NoticeInfo is the structured part of a harness notice. Fields are empty
+// when the notice does not carry them.
+type NoticeInfo struct {
+	Subtype       string // Claude Code's system subtype, such as "model_refusal_fallback"
+	Level         string // notice, warning, error
+	Category      string // refusal category, such as "cyber"
+	Explanation   string
+	OriginalModel string
+	FallbackModel string
+	Trigger       string
+	Scope         string
+}
 
 // Record is one item recovered from a transcript. One transcript line can
 // yield several records (an assistant message with text and tool calls).
@@ -39,6 +53,9 @@ type Record struct {
 	IsError  bool
 	Bytes    int64  // Skipped only
 	Model    string // assistant records: the model that produced them
+	Version  string // the harness version that wrote the record
+	Meta     bool   // a message the harness wrote into the conversation itself
+	Notice   *NoticeInfo
 }
 
 // MaxLine is the largest single transcript line ReadFrom will parse;
@@ -124,10 +141,46 @@ type line struct {
 	PromptID       string    `json:"promptId"`
 	IsSidechain    bool      `json:"isSidechain"`
 	RequestedModel string    `json:"requestedModel"`
-	Message        struct {
+	Version        string    `json:"version"`
+	IsMeta         bool      `json:"isMeta"`
+
+	// system records
+	Subtype               string          `json:"subtype"`
+	Level                 string          `json:"level"`
+	Content               json.RawMessage `json:"content"`
+	Trigger               string          `json:"trigger"`
+	Scope                 string          `json:"scope"`
+	OriginalModel         string          `json:"originalModel"`
+	FallbackModel         string          `json:"fallbackModel"`
+	APIRefusalCategory    string          `json:"apiRefusalCategory"`
+	APIRefusalExplanation string          `json:"apiRefusalExplanation"`
+
+	Message struct {
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
+}
+
+// systemNotice keeps system records a reviewer should see: a model
+// fallback always, and anything at notice, warning, or error level.
+// Routine records (per-turn hook summaries at "suggestion" level) are
+// dropped.
+func systemNotice(l line, base Record) []Record {
+	switch {
+	case l.Subtype == "model_refusal_fallback":
+	case l.Level == "notice", l.Level == "warning", l.Level == "error":
+	default:
+		return nil
+	}
+	var text string
+	_ = json.Unmarshal(l.Content, &text)
+	r := base
+	r.Kind, r.Text = Notice, text
+	r.Notice = &NoticeInfo{
+		Subtype: l.Subtype, Level: l.Level, Category: l.APIRefusalCategory, Explanation: l.APIRefusalExplanation,
+		OriginalModel: l.OriginalModel, FallbackModel: l.FallbackModel, Trigger: l.Trigger, Scope: l.Scope,
+	}
+	return []Record{r}
 }
 
 type block struct {
@@ -142,17 +195,20 @@ type block struct {
 }
 
 // parseLine maps one transcript line to records. Lines afr does not
-// need (attachments, system records, thinking, subagent sidechains, bad
-// JSON) yield nothing.
+// need (attachments, routine system records, thinking, subagent
+// sidechains, bad JSON) yield nothing.
 func parseLine(b []byte) []Record {
 	var l line
 	if json.Unmarshal(b, &l) != nil || l.IsSidechain {
 		return nil
 	}
+	base := Record{UUID: l.UUID, TS: l.Timestamp, PromptID: l.PromptID, Version: l.Version, Meta: l.IsMeta}
+	if l.Type == "system" {
+		return systemNotice(l, base)
+	}
 	if l.Type != "user" && l.Type != "assistant" {
 		return nil
 	}
-	base := Record{UUID: l.UUID, TS: l.Timestamp, PromptID: l.PromptID}
 	if l.Type == "assistant" {
 		base.Model = l.Message.Model
 		if base.Model == "" || base.Model == "<synthetic>" { // Claude Code's placeholder for messages it writes itself
