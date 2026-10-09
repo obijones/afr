@@ -37,7 +37,8 @@ type Record struct {
 	Input    json.RawMessage
 	Output   json.RawMessage
 	IsError  bool
-	Bytes    int64 // Skipped only
+	Bytes    int64  // Skipped only
+	Model    string // assistant records: the model that produced them
 }
 
 // MaxLine is the largest single transcript line ReadFrom will parse;
@@ -117,12 +118,14 @@ func nextLineStart(f *os.File, pos int64) (int64, bool, error) {
 }
 
 type line struct {
-	Type        string    `json:"type"`
-	UUID        string    `json:"uuid"`
-	Timestamp   time.Time `json:"timestamp"`
-	PromptID    string    `json:"promptId"`
-	IsSidechain bool      `json:"isSidechain"`
-	Message     struct {
+	Type           string    `json:"type"`
+	UUID           string    `json:"uuid"`
+	Timestamp      time.Time `json:"timestamp"`
+	PromptID       string    `json:"promptId"`
+	IsSidechain    bool      `json:"isSidechain"`
+	RequestedModel string    `json:"requestedModel"`
+	Message        struct {
+		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 }
@@ -150,6 +153,15 @@ func parseLine(b []byte) []Record {
 		return nil
 	}
 	base := Record{UUID: l.UUID, TS: l.Timestamp, PromptID: l.PromptID}
+	if l.Type == "assistant" {
+		base.Model = l.Message.Model
+		if base.Model == "" || base.Model == "<synthetic>" { // Claude Code's placeholder for messages it writes itself
+			base.Model = l.RequestedModel
+		}
+		if base.Model == "<synthetic>" {
+			base.Model = ""
+		}
+	}
 
 	var s string
 	if json.Unmarshal(l.Message.Content, &s) == nil {

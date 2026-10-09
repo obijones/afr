@@ -193,6 +193,29 @@ func TestStopReplyReachesTranscriptLater(t *testing.T) {
 	}
 }
 
+func TestRepliesCarryModel(t *testing.T) {
+	dir := t.TempDir()
+	tpath := filepath.Join(dir, "t.jsonl")
+	ls := lines(t)
+	i, reply := firstReply(t)
+	writeTranscript(t, tpath, ls[:i]) // earlier assistant records (tool calls) give the model
+	mustRecord(t, dir, hook(tpath, schema.TurnEnd, "p1", "", reply, true))
+	writeTranscript(t, tpath, ls)
+	mustRecord(t, dir, hook(tpath, schema.SessionEnd, "", "", "", true))
+	var replies int
+	for _, e := range logEvents(t, dir) {
+		if e.EventType == schema.AssistantMessage {
+			replies++
+			if e.Model != "claude-haiku-5-5" {
+				t.Errorf("reply (origin %q) model = %q", e.Origin, e.Model)
+			}
+		}
+	}
+	if replies == 0 {
+		t.Fatal("no replies logged")
+	}
+}
+
 func TestMissingTranscriptKeepsHookEvents(t *testing.T) {
 	dir := t.TempDir()
 	mustRecord(t, dir, hook(filepath.Join(dir, "absent.jsonl"), schema.TurnEnd, "p1", "", "final words", true))

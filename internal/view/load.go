@@ -88,6 +88,7 @@ type Summary struct {
 	Host      string
 	Cwd       string
 	Agent     string
+	Models    []string // models that wrote replies, in order of first use
 }
 
 // Summarize computes a session's summary from its events.
@@ -107,6 +108,9 @@ func Summarize(events []schema.Event) Summary {
 		}
 		if e.Agent != "" {
 			s.Agent = e.Agent
+		}
+		if e.Model != "" && !slices.Contains(s.Models, e.Model) {
+			s.Models = append(s.Models, e.Model)
 		}
 		s.Highlight += len(e.Highlights)
 		switch e.EventType {
