@@ -49,7 +49,8 @@ transcript), and fails if p95 exceeds 50 ms. Run it locally with:
 AFR_LATENCY=1 go test -run TestHookLatency -v ./cmd/afr
 ```
 
-The seeded scenario is not part of CI: it needs a live model and Claude quota.
+The seeded scenario is not part of CI: it needs a live model and Claude quota. How the
+repository and its Actions are secured: [docs/github-security.md](docs/github-security.md).
 
 ## Try it in a sandbox
 
