@@ -47,7 +47,11 @@ func Replay(w io.Writer, events []schema.Event, integrity string, o Options) err
 	}
 
 	start := evs[0].TS.In(o.Loc)
-	fmt.Fprintf(w, "SESSION %s  %s@%s  %s  %s\n", sum.Session, sum.User, sum.Host, sum.Cwd, sum.Agent)
+	models := strings.Join(sum.Models, ", ")
+	if models == "" {
+		models = "unknown"
+	}
+	fmt.Fprintf(w, "SESSION %s  %s@%s  %s  %s  model: %s\n", sum.Session, sum.User, sum.Host, sum.Cwd, sum.Agent, models)
 	fmt.Fprintf(w, "%s  %s, %s, %s  integrity: %s\n\n", start.Format("2006-01-02 MST"),
 		plural(sum.Turns, "turn"), plural(sum.ToolCalls, "tool call"), plural(sum.Highlight, "highlight"), integrity)
 
@@ -437,8 +441,8 @@ func SessionTable(w io.Writer, rows []Summary, loc *time.Location) error {
 		_, err := fmt.Fprintln(w, "no sessions recorded yet")
 		return err
 	}
-	_, err := fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5s  %5s  %4s  %-20s  %-30s  %s\n",
-		"STARTED", "LAST", "STATUS", "TURNS", "TOOLS", "HIGH", "USER@HOST", "DIR", "SESSION")
+	_, err := fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5s  %5s  %4s  %-18s  %-20s  %-30s  %s\n",
+		"STARTED", "LAST", "STATUS", "TURNS", "TOOLS", "HIGH", "MODEL", "USER@HOST", "DIR", "SESSION")
 	for _, s := range rows {
 		if err != nil {
 			return err
@@ -447,9 +451,17 @@ func SessionTable(w io.Writer, rows []Summary, loc *time.Location) error {
 		if s.LastSeen.In(loc).YearDay() != s.Started.In(loc).YearDay() {
 			last = s.LastSeen.In(loc).Format("01-02 15:04")
 		}
-		_, err = fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5d  %5d  %4d  %-20s  %-30s  %s\n",
+		model := "-"
+		switch len(s.Models) {
+		case 0:
+		case 1:
+			model = s.Models[0]
+		default:
+			model = s.Models[len(s.Models)-1] + "+"
+		}
+		_, err = fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5d  %5d  %4d  %-18s  %-20s  %-30s  %s\n",
 			s.Started.In(loc).Format("2006-01-02 15:04"), last, cut(s.Status, 16), s.Turns, s.ToolCalls, s.Highlight,
-			cut(s.User+"@"+s.Host, 20), cutLeft(s.Cwd, 30), s.Session)
+			cut(model, 18), cut(s.User+"@"+s.Host, 20), cutLeft(s.Cwd, 30), s.Session)
 	}
 	return err
 }

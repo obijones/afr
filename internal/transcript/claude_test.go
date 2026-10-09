@@ -134,3 +134,23 @@ func TestHugeLineStillBeingWrittenWaits(t *testing.T) {
 		t.Fatalf("recs=%v off=%d err=%v; want to wait at offset 0", recs, off, err)
 	}
 }
+
+func TestAssistantModel(t *testing.T) {
+	recs, _, _ := ReadFrom(fixture, 0, 16<<20)
+	for _, r := range recs {
+		switch r.Kind {
+		case Text, ToolUse:
+			if r.Model != "claude-haiku-5-5" {
+				t.Fatalf("assistant record model = %q", r.Model)
+			}
+		case Prompt, ToolResult:
+			if r.Model != "" {
+				t.Fatalf("user record has a model: %+v", r)
+			}
+		}
+	}
+	syn := `{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"x"}]}}`
+	if recs := parseLine([]byte(syn)); len(recs) != 1 || recs[0].Model != "" {
+		t.Fatalf("synthetic model kept: %+v", recs)
+	}
+}

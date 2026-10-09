@@ -52,6 +52,7 @@ type Event struct {
 	User      string    `json:"user"`
 	Host      string    `json:"host"`
 	Agent     string    `json:"agent"`
+	Model     string    `json:"model,omitempty"` // the model that wrote an AI reply
 	Cwd       string    `json:"cwd,omitempty"`
 	EventType string    `json:"event_type"`
 	HookEvent string    `json:"hook_event,omitempty"`
