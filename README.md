@@ -10,7 +10,21 @@ normalized events and appends them to a per-session log with a hash chain. At ea
 turn end, and session end it also reads new lines of Claude Code's transcript to recover
 what hooks do not carry: AI replies between tool calls, tool calls the harness rejected
 before any hook ran, and messages the harness injected. `afr verify` checks the chain.
-Session listing and replay come next.
+
+## Review sessions
+
+```sh
+afr sessions                 # most recent first: status, turns, tool calls, user@host, dir
+afr replay 3394              # one session as a conversation (full id or unique prefix)
+afr replay --full 3394       # with complete prompts, replies, tool inputs, and outputs
+```
+
+A replay reads top to bottom in the order things happened: where the session began, each
+prompt (turns t1, t2, ...), the AI's replies, every tool call on one line with its result,
+subagent work tagged with the subagent type, highlights at the front of the line, and how
+the session ended. Tool calls the harness handled without running a hook are marked
+`(no hook ran)`; messages the harness injected are marked as such. The header shows
+whether the log's hash chain verifies.
 
 ## Build and test
 
@@ -26,8 +40,9 @@ make vet            # vets Linux and Windows builds
 ```sh
 scripts/sandbox-setup.sh            # creates ../afr-sandbox with project-level hooks
 cd ../afr-sandbox && claude         # use Claude Code normally, then exit
-ls .afr-data/sessions/              # one NDJSON log per session
-AFR_HOME=$PWD/.afr-data ../afr/bin/afr verify <session-id>
+export AFR_HOME=$PWD/.afr-data
+../afr/bin/afr sessions
+../afr/bin/afr replay <session-id-prefix>
 ```
 
 The sandbox also sets `AFR_CAPTURE_RAW=1`, which keeps every raw hook payload under
