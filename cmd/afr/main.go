@@ -13,6 +13,7 @@ const usage = `usage: afr <command>
 
 commands:
   hook      read one agent hook payload on stdin and record it (always exits 0)
+  verify    check a session log's sequence numbers and hash chain: afr verify <session-id>
   version   print the afr version
 `
 
@@ -31,6 +32,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "hook":
 		return runHook(stdin)
+	case "verify":
+		return runVerify(args[1:], stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return 0
