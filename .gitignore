@@ -1,0 +1,10 @@
+# Build output
+/bin/
+
+# Raw captures hold full prompts, replies, and command output.
+# Never commit them; commit only scrubbed fixtures under testdata/.
+.afr-data/
+/testdata/raw/
+
+# Local Claude Code settings used for sandbox testing
+.claude/settings.local.json
