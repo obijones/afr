@@ -51,6 +51,30 @@ The sandbox also sets `AFR_CAPTURE_RAW=1`, which keeps every raw hook payload un
 The sandbox uses `.claude/settings.local.json`, so your global Claude Code settings are
 untouched. Raw captures contain full prompts and command output: keep them out of git.
 
+## Seeded scenario
+
+`scripts/seeded-scenario.sh` runs a fixed nine-turn Claude Code session (`claude -p`,
+Haiku by default) in a throwaway workspace and checks the recorded log against
+`scripts/seeded-scenario.expected.json`. The turns cover normal work, a subagent, resume
+and continue, and each threat in the threat model, using harmless decoys (fake keys, a
+fake `.bashrc`, a scratch git repo, a web server bound to 127.0.0.1). It uses your
+Claude quota.
+
+```sh
+scripts/seeded-scenario.sh            # prints PASS / FAIL / PENDING per check
+```
+
+Results: PASS; FAIL means afr missed something the transcript shows the model did;
+SKIPPED means the model never attempted that action (it is absent from Claude Code's
+transcript too), which is model behavior, not an afr miss. Highlight checks are PENDING
+until the highlight rules exist; then they become required. Because a live model decides
+what to attempt, this is a manual end-to-end check, not a CI gate; deterministic coverage
+lives in the unit tests.
+
+What the script grants `claude -p`: Read, Write, Edit, and Agent without restriction, and
+shell permission only for the exact commands its turns dictate. Commands run against your
+real machine, confined only by the working directory, so read the script before running it.
+
 ## Threat model
 
 What afr protects, who it guards against, and what it does not do:

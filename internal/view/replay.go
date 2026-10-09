@@ -154,7 +154,7 @@ func (r *replayer) event(e schema.Event) {
 		// status gets at most about 40% of the room, the command the rest.
 		head := fmt.Sprintf("%-5s  ", name)
 		const sep = "  ->  "
-		summary, st := oneLine(toolSummary(e.Tool, c.Input)), oneLine(status)
+		summary, st := oneLine(relativeTo(e.Cwd, toolSummary(e.Tool, c.Input))), oneLine(status)
 		avail := r.o.Width - len(neutralize(r.prefixFor(e, "TOOL"), false)) - len(head) - len(sep)
 		if len(summary)+len(st) > avail {
 			if maxSt := max(avail*2/5, 24); len(st) > maxSt {
@@ -221,6 +221,20 @@ func toolSummary(tool string, in json.RawMessage) string {
 		return str("query")
 	}
 	return compact(in)
+}
+
+// relativeTo shows a path under the session's working directory relative
+// to it, so the part that identifies the file is not cut off. Anything
+// else, including commands, is returned unchanged.
+func relativeTo(cwd, s string) string {
+	if cwd == "" || !strings.HasPrefix(s, cwd) {
+		return s
+	}
+	rest := s[len(cwd):]
+	if len(rest) > 1 && (rest[0] == '/' || rest[0] == '\\') {
+		return rest[1:]
+	}
+	return s
 }
 
 // resultSummary reduces a tool result to a few words: ok, error, an
