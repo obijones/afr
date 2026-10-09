@@ -37,6 +37,20 @@ make test
 make vet            # vets Linux and Windows builds
 ```
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push, on Ubuntu and Windows: gofmt, `go vet` for
+both targets, the full test suite (with the race detector on Linux), a cross-build of
+`afr` and `afr.exe`, and the latency gate. The gate builds the real binary, times 300
+`afr hook` calls on the captured payloads (with transcript catch-up on a real
+transcript), and fails if p95 exceeds 50 ms. Run it locally with:
+
+```sh
+AFR_LATENCY=1 go test -run TestHookLatency -v ./cmd/afr
+```
+
+The seeded scenario is not part of CI: it needs a live model and Claude quota.
+
 ## Try it in a sandbox
 
 ```sh

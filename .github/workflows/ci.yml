@@ -1,0 +1,61 @@
+name: ci
+
+# Every branch push runs CI, so a feature branch shows results before its PR.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet (linux and windows targets)
+        shell: bash
+        run: |
+          go vet ./...
+          GOOS=windows go vet ./...
+          GOOS=linux go vet ./...
+
+      - name: test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            go test -race -count=1 ./...
+          else
+            go test -count=1 ./...
+          fi
+
+      - name: build
+        shell: bash
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o bin/afr ./cmd/afr
+          GOOS=windows GOARCH=amd64 go build -o bin/afr.exe ./cmd/afr
+
+      - name: latency gate (p95 of one afr hook call)
+        shell: bash
+        env:
+          AFR_LATENCY: "1"
+          AFR_LATENCY_BUDGET_MS: "50"
+        run: go test -count=1 -run TestHookLatency -v ./cmd/afr
