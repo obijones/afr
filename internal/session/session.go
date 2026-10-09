@@ -40,6 +40,7 @@ type State struct {
 	TranscriptPath string `json:"transcript_path"`
 	Offset         int64  `json:"offset"`
 	PromptID       string `json:"prompt_id"` // current turn while scanning the transcript
+	Model          string `json:"model"`     // latest model seen in the transcript
 
 	HookToolIDs       []string `json:"hook_tool_ids"`       // tool calls hooks recorded, not yet seen in the transcript
 	HookPromptIDs     []string `json:"hook_prompt_ids"`     // prompts hooks recorded
@@ -104,6 +105,11 @@ func Record(dataDir string, c *collect.Converted) error {
 			// A transcript read error must not lose the hook's own events.
 		}
 
+		for i := range events {
+			if events[i].EventType == schema.AssistantMessage && events[i].Model == "" {
+				events[i].Model = st.Model // the Stop reply: written by the latest model seen
+			}
+		}
 		if err := w.Append(append(recovered, events...)); err != nil {
 			return err
 		}
@@ -120,6 +126,9 @@ func (st *State) recover(recs []transcript.Record, base schema.Event, reply stri
 	for _, r := range recs {
 		if r.PromptID != "" {
 			st.PromptID = r.PromptID
+		}
+		if r.Model != "" {
+			st.Model = r.Model
 		}
 		e := base
 		e.EventID = schema.NewEventID(r.TS)
@@ -152,6 +161,7 @@ func (st *State) recover(recs []transcript.Record, base schema.Event, reply stri
 				found = true
 			}
 			e.EventType = schema.AssistantMessage
+			e.Model = r.Model
 			e.Content = text(r.Text)
 		case transcript.ToolUse:
 			if i := slices.Index(st.HookToolIDs, r.ToolID); i >= 0 {

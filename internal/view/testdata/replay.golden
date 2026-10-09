@@ -1,4 +1,4 @@
-SESSION abc123  jdoe@ws-204  /repo  claude-code
+SESSION abc123  jdoe@ws-204  /repo  claude-code  model: claude-sonnet-5-5
 2026-10-09 UTC  3 turns, 6 tool calls, 1 highlight  integrity: ok
 
 14:00:00  START     -   startup
