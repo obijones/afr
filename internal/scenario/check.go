@@ -48,15 +48,21 @@ func Load(path string) (Expect, error) {
 	return e, json.Unmarshal(b, &e)
 }
 
-// Result is one check's outcome: PASS, FAIL, or PENDING.
+// Result is one check's outcome: PASS, FAIL, PENDING, or SKIPPED.
+// SKIPPED means the model never attempted the action (it is absent from
+// the harness transcript too), so there was nothing for afr to record.
 type Result struct {
 	Status string
 	Check  string
 }
 
 // Check runs every expectation against a session's events. integrityOK
-// comes from store.Verify on the same log.
-func Check(x Expect, events []schema.Event, integrityOK bool) []Result {
+// comes from store.Verify on the same log. attempted holds the input of
+// every tool call in the harness transcripts (main and subagents); it
+// separates "afr missed it" (in the transcript, not the log: FAIL) from
+// "the model never tried" (in neither: SKIPPED). Nil means unknown, and
+// every miss is a FAIL.
+func Check(x Expect, events []schema.Event, integrityOK bool, attempted []string) []Result {
 	var out []Result
 	add := func(ok bool, format string, a ...any) {
 		s := "PASS"
@@ -119,29 +125,57 @@ func Check(x Expect, events []schema.Event, integrityOK bool) []Result {
 		if tc.Subagent {
 			desc += " in a subagent"
 		}
-		add(findCall(events, tc) != nil, "%s", desc)
-	}
-
-	for _, h := range x.Highlights {
-		call := findCall(events, ToolCall{Contains: h.On})
-		tagged := false
-		if call != nil {
-			for _, got := range call.Highlights {
-				tagged = tagged || got.RuleID == h.RuleID
-			}
-		}
-		desc := fmt.Sprintf("highlight %s on %q", h.RuleID, h.On)
 		switch {
-		case tagged:
+		case len(findCalls(events, tc)) > 0:
 			out = append(out, Result{"PASS", desc})
-		case !h.Required:
-			out = append(out, Result{"PENDING", desc + " (rule not required yet)"})
+		case attempted != nil && !anyContains(attempted, tc.Contains):
+			out = append(out, Result{"SKIPPED", desc + " (the model did not attempt it)"})
 		default:
 			out = append(out, Result{"FAIL", desc})
 		}
 	}
+
+	for _, h := range x.Highlights {
+		// The model may wrap or repeat a command, so any matching call
+		// carrying the rule counts.
+		calls := findCalls(events, ToolCall{Contains: h.On})
+		tagged := false
+		for _, c := range calls {
+			for _, got := range c.Highlights {
+				tagged = tagged || got.RuleID == h.RuleID
+			}
+		}
+		desc := fmt.Sprintf("highlight %s on %q", h.RuleID, h.On)
+		target := fmt.Sprintf("%d matching calls", len(calls))
+		switch len(calls) {
+		case 0:
+			target = "no matching call recorded"
+		case 1:
+			target = "1 matching call"
+		}
+		switch {
+		case tagged:
+			out = append(out, Result{"PASS", desc})
+		case !h.Required:
+			out = append(out, Result{"PENDING", desc + " (rule not required yet; " + target + ")"})
+		default:
+			out = append(out, Result{"FAIL", desc + " (" + target + ")"})
+		}
+	}
 	return out
 }
+
+func anyContains(inputs []string, sub string) bool {
+	for _, in := range inputs {
+		if strings.Contains(in, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// InputText renders tool input JSON as checks match it.
+func InputText(raw json.RawMessage) string { return inputText(raw) }
 
 // Failed reports whether any check failed.
 func Failed(rs []Result) bool {
@@ -153,8 +187,10 @@ func Failed(rs []Result) bool {
 	return false
 }
 
-func findCall(events []schema.Event, tc ToolCall) *schema.Event {
-	for i, e := range events {
+// findCalls returns every tool call matching tc.
+func findCalls(events []schema.Event, tc ToolCall) []schema.Event {
+	var out []schema.Event
+	for _, e := range events {
 		if e.EventType != schema.ToolCall || e.Content == nil {
 			continue
 		}
@@ -165,10 +201,10 @@ func findCall(events []schema.Event, tc ToolCall) *schema.Event {
 			continue
 		}
 		if strings.Contains(inputText(e.Content.Input), tc.Contains) {
-			return &events[i]
+			out = append(out, e)
 		}
 	}
-	return nil
+	return out
 }
 
 // inputText renders tool input as JSON without HTML escaping, so "|",

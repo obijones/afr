@@ -64,7 +64,16 @@ Claude quota.
 scripts/seeded-scenario.sh            # prints PASS / FAIL / PENDING per check
 ```
 
-Highlight checks are PENDING until the highlight rules exist; then they become required.
+Results: PASS; FAIL means afr missed something the transcript shows the model did;
+SKIPPED means the model never attempted that action (it is absent from Claude Code's
+transcript too), which is model behavior, not an afr miss. Highlight checks are PENDING
+until the highlight rules exist; then they become required. Because a live model decides
+what to attempt, this is a manual end-to-end check, not a CI gate; deterministic coverage
+lives in the unit tests.
+
+What the script grants `claude -p`: Read, Write, Edit, and Agent without restriction, and
+shell permission only for the exact commands its turns dictate. Commands run against your
+real machine, confined only by the working directory, so read the script before running it.
 
 ## Threat model
 
