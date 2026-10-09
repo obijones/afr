@@ -35,20 +35,31 @@ func LogPath(dataDir, session string) string {
 	return filepath.Join(SessionsDir(dataDir), platform.SafeFileName(session, "unknown-session")+".ndjson")
 }
 
-// Append seals events in order (seq, prev_hash, hash) and appends them to
-// their session's log in one write, holding a lock so concurrent hook
-// processes never interleave or reuse a seq. All events must belong to
-// the same session.
+// Append seals events in order and appends them to their session's log
+// under the session lock. All events must belong to the same session.
 func Append(dataDir string, events []schema.Event) error {
 	if len(events) == 0 {
 		return nil
 	}
-	session := events[0].Session
-	for _, e := range events[1:] {
-		if e.Session != session {
-			return errors.New("store: events from more than one session")
-		}
-	}
+	return WithSession(dataDir, events[0].Session, func(w *Writer) error {
+		return w.Append(events)
+	})
+}
+
+// Writer appends to one session's log while its lock is held.
+type Writer struct {
+	f       *os.File
+	session string
+	seq     int64
+	prev    string
+	repair  bool
+}
+
+// WithSession holds the session's lock while fn runs, so concurrent hook
+// processes never interleave writes or reuse a seq, and per-session state
+// kept beside the log can be read and updated safely. The wait for the
+// lock is bounded by LockTimeout.
+func WithSession(dataDir, session string, fn func(w *Writer) error) error {
 	if err := platform.MkdirPrivate(SessionsDir(dataDir)); err != nil {
 		return err
 	}
@@ -74,15 +85,30 @@ func Append(dataDir string, events []schema.Event) error {
 	}
 	defer f.Close()
 
-	seq, prev, needNewline, err := tail(f)
+	seq, prev, repair, err := tail(f)
 	if err != nil {
 		return err
 	}
+	return fn(&Writer{f: f, session: session, seq: seq, prev: prev, repair: repair})
+}
+
+// Seq is the seq of the last event in the log (0 for an empty log).
+func (w *Writer) Seq() int64 { return w.seq }
+
+// Append seals events (seq, prev_hash, hash) and writes them in one write.
+func (w *Writer) Append(events []schema.Event) error {
+	if len(events) == 0 {
+		return nil
+	}
 	var buf bytes.Buffer
-	if needNewline {
+	if w.repair {
 		buf.WriteByte('\n') // end the damaged line so it cannot swallow ours
 	}
+	seq, prev := w.seq, w.prev
 	for i := range events {
+		if events[i].Session != w.session {
+			return errors.New("store: events from more than one session")
+		}
 		seq++
 		if err := events[i].Seal(seq, prev); err != nil {
 			return err
@@ -95,8 +121,11 @@ func Append(dataDir string, events []schema.Event) error {
 		buf.Write(line)
 		buf.WriteByte('\n') // always \n, never \r\n, on every platform
 	}
-	_, err = f.Write(buf.Bytes())
-	return err
+	if _, err := w.f.Write(buf.Bytes()); err != nil {
+		return err
+	}
+	w.seq, w.prev, w.repair = seq, prev, false
+	return nil
 }
 
 // tail returns the seq and hash of the last complete event in f, and

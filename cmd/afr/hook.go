@@ -12,7 +12,7 @@ import (
 
 	"github.com/obijones/afr/internal/collect"
 	"github.com/obijones/afr/internal/platform"
-	"github.com/obijones/afr/internal/store"
+	"github.com/obijones/afr/internal/session"
 )
 
 const maxPayload = 32 << 20 // 32 MiB; larger payloads are cut and logged
@@ -63,7 +63,7 @@ func runHook(stdin io.Reader) (code int) {
 		saveRaw()
 	}
 
-	events, err := collect.FromClaudeCode(payload, now, identity())
+	conv, err := collect.FromClaudeCode(payload, now, identity())
 	if err != nil {
 		// Keep what we could not interpret, so nothing is silently lost.
 		logError("convert payload: " + err.Error())
@@ -72,8 +72,8 @@ func runHook(stdin io.Reader) (code int) {
 		}
 		return 0
 	}
-	if err := store.Append(dataDir, events); err != nil {
-		logError("append events: " + err.Error())
+	if err := session.Record(dataDir, conv); err != nil {
+		logError("record events: " + err.Error())
 		if os.Getenv("AFR_CAPTURE_RAW") != "1" {
 			saveRaw() // keep the payload so the event can be recovered
 		}

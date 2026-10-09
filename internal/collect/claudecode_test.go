@@ -19,10 +19,11 @@ func convert(t *testing.T, name string) []schema.Event {
 	if err != nil {
 		t.Fatal(err)
 	}
-	evs, err := FromClaudeCode(b, time.Unix(1700000000, 0), Identity{User: "u", Host: "h"})
+	c, err := FromClaudeCode(b, time.Unix(1700000000, 0), Identity{User: "u", Host: "h"})
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
+	evs := c.Events
 	for _, e := range evs {
 		if e.Schema != schema.Version || e.Session == "" || e.EventID == "" || e.Agent != "claude-code" || e.User != "u" {
 			t.Fatalf("%s: base fields missing: %+v", name, e)
@@ -129,12 +130,28 @@ func TestClaudeLargeOutputCapped(t *testing.T) {
 		"hook_event_name": "PostToolUse", "session_id": "s", "tool_name": "Bash", "tool_use_id": "t",
 		"tool_response": map[string]string{"stdout": big},
 	})
-	evs, err := FromClaudeCode(p, time.Now(), Identity{})
+	conv, err := FromClaudeCode(p, time.Now(), Identity{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := evs[0].Content
+	c := conv.Events[0].Content
 	if !c.Truncated || c.Bytes <= schema.MaxContentBytes || len(c.Output) > schema.MaxContentBytes+16 || !json.Valid(c.Output) {
 		t.Errorf("cap: truncated=%v bytes=%d len=%d", c.Truncated, c.Bytes, len(c.Output))
+	}
+}
+
+func TestClaudeTranscriptHints(t *testing.T) {
+	for name, want := range map[string]bool{"Stop": true, "SessionEnd": true, "UserPromptSubmit": true, "PreToolUse-Bash": false, "SessionStart-startup": false} {
+		b, _ := os.ReadFile(filepath.Join(fixtures, name+".json"))
+		c, err := FromClaudeCode(b, time.Now(), Identity{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ReadTranscript != want || c.TranscriptPath == "" {
+			t.Errorf("%s: ReadTranscript=%v path=%q", name, c.ReadTranscript, c.TranscriptPath)
+		}
+		if c.Base.Session == "" || c.Base.EventID != "" {
+			t.Errorf("%s: base template %+v", name, c.Base)
+		}
 	}
 }

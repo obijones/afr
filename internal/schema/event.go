@@ -15,6 +15,9 @@ import (
 // Version is the value written to every event's schema field.
 const Version = "1"
 
+// OriginTranscript marks an event recovered from the harness transcript.
+const OriginTranscript = "transcript"
+
 // Event types.
 const (
 	SessionStart     = "session.start"
@@ -52,10 +55,15 @@ type Event struct {
 	Cwd       string    `json:"cwd,omitempty"`
 	EventType string    `json:"event_type"`
 	HookEvent string    `json:"hook_event,omitempty"`
+	// Origin is "transcript" for events recovered from the harness
+	// transcript rather than a hook; empty means a hook.
+	Origin         string `json:"origin,omitempty"`
+	TranscriptUUID string `json:"transcript_uuid,omitempty"`
 
 	Tool       string `json:"tool,omitempty"`
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	DurationMS *int64 `json:"duration_ms,omitempty"`
+	ToolError  bool   `json:"tool_error,omitempty"` // the tool call failed or was refused
 
 	Source         string `json:"source,omitempty"`     // session.start: startup, resume, ...
 	EndReason      string `json:"end_reason,omitempty"` // session.end
