@@ -235,3 +235,20 @@ func TestReplayNeutralizesTerminalControls(t *testing.T) {
 		}
 	}
 }
+
+func TestRelativeTo(t *testing.T) {
+	cases := []struct{ cwd, in, want string }{
+		{"/w/ws", "/w/ws/notes.txt", "notes.txt"},
+		{"/w/ws", "/w/ws/fake_home/.ssh/id_rsa", "fake_home/.ssh/id_rsa"},
+		{"/w/ws", "/w/wsother/x", "/w/wsother/x"},
+		{"/w/ws", "/tmp/outside.txt", "/tmp/outside.txt"},
+		{"/w/ws", "cat /w/ws/x", "cat /w/ws/x"},
+		{`C:\proj`, `C:\proj\main.go`, "main.go"},
+		{"", "/a/b", "/a/b"},
+	}
+	for _, c := range cases {
+		if got := relativeTo(c.cwd, c.in); got != c.want {
+			t.Errorf("relativeTo(%q, %q) = %q, want %q", c.cwd, c.in, got, c.want)
+		}
+	}
+}
