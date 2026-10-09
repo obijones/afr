@@ -23,8 +23,10 @@ A replay reads top to bottom in the order things happened: where the session beg
 prompt (turns t1, t2, ...), the AI's replies, every tool call on one line with its result,
 subagent work tagged with the subagent type, highlights at the front of the line, and how
 the session ended. Tool calls the harness handled without running a hook are marked
-`(no hook ran)`; messages the harness injected are marked as such. The header shows
-whether the log's hash chain verifies.
+`(no hook ran)`; messages the harness injected are marked as such. Harness notices, such
+as a safety classifier stopping a response and switching models, appear as `NOTICE` lines
+with the category and the models involved. The header shows the agent version, the
+models used, and whether the log's hash chain verifies.
 
 ## Build and test
 
@@ -74,6 +76,11 @@ lives in the unit tests.
 What the script grants `claude -p`: Read, Write, Edit, and Agent without restriction, and
 shell permission only for the exact commands its turns dictate. Commands run against your
 real machine, confined only by the working directory, so read the script before running it.
+
+## Findings
+
+Unexpected agent and harness behavior that testing revealed, with evidence and what it
+means for afr: [docs/findings.md](docs/findings.md).
 
 ## Threat model
 

