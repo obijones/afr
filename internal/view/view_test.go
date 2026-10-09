@@ -202,3 +202,36 @@ func TestReplayRealSession(t *testing.T) {
 		t.Log(out)
 	}
 }
+
+func TestReplayNeutralizesTerminalControls(t *testing.T) {
+	t0 := time.Date(2026, 10, 9, 14, 0, 0, 0, time.UTC)
+	base := schema.Event{Schema: schema.Version, Session: "s", TS: t0, TurnID: "p1"}
+	call, res, reply := base, base, base
+	call.EventType, call.Tool, call.ToolCallID = schema.ToolCall, "Bash", "c1"
+	call.Content = &schema.Content{Input: json.RawMessage(`{"command":"echo safe \u202egnp.exe"}`)}
+	call.AgentType = "evil%sagent"
+	res.EventType, res.Tool, res.ToolCallID = schema.ToolResult, "Bash", "c1"
+	res.Content = &schema.Content{Output: json.RawMessage(`{"stdout":"\u001b[31mred\u001b[0m\rOVERWRITTEN\n","stderr":""}`)}
+	reply.EventType = schema.AssistantMessage
+	reply.Content = &schema.Content{Text: "done\u001b[2J\u0085"}
+	for _, full := range []bool{false, true} {
+		var b bytes.Buffer
+		if err := Replay(&b, []schema.Event{call, res, reply}, "ok", Options{Full: full, Loc: time.UTC, Width: 300}); err != nil {
+			t.Fatal(err)
+		}
+		out := b.String()
+		for _, bad := range []string{"\x1b", "\r", "\u202e", "\u0085", "%!"} {
+			if strings.Contains(out, bad) {
+				t.Errorf("full=%v: output contains raw %q:\n%s", full, bad, out)
+			}
+		}
+		for _, want := range []string{"<U+202E>", "[evil%sagent]", `\x1b[2J`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("full=%v: output missing visible %q:\n%s", full, want, out)
+			}
+		}
+		if full && !strings.Contains(out, `\x1b[31mred\x1b[0m\rOVERWRITTEN`) {
+			t.Errorf("full output did not show the escapes visibly:\n%s", out)
+		}
+	}
+}
