@@ -55,6 +55,13 @@ func synthetic() []schema.Event {
 		at(42, schema.Event{EventType: schema.ToolCall, TurnID: "p2", Origin: schema.OriginTranscript, Tool: "Bash", ToolCallID: "c6", Content: in(`{"command":"sleep 90 && echo done"}`)}),
 		at(42, schema.Event{EventType: schema.ToolResult, TurnID: "p2", Origin: schema.OriginTranscript, ToolCallID: "c6", ToolError: true, Content: out(`"<tool_use_error>Blocked: sleep 90 followed by: echo done.</tool_use_error>"`)}),
 		at(44, schema.Event{EventType: schema.PromptSubmit, TurnID: "p3", Origin: schema.OriginTranscript, Content: txt("<task-notification>build finished</task-notification>")}),
+		at(41, schema.Event{EventType: schema.HarnessNotice, TurnID: "p2", Origin: schema.OriginTranscript, AgentVersion: "2.1.296",
+			Content: txt("Sonnet 5.5's safeguards flagged this session. Sonnet 5 is answering instead."),
+			Notice:  &schema.Notice{Kind: "model_refusal_fallback", Level: "warning", Category: "cyber", Explanation: "This request triggered restrictions on violative cyber content.", OriginalModel: "claude-sonnet-5-5", FallbackModel: "claude-sonnet-5", Trigger: "refusal", Scope: "session"}}),
+		at(41, schema.Event{EventType: schema.PromptSubmit, TurnID: "p2", Origin: schema.OriginTranscript, AgentVersion: "2.1.296", Content: txt("Your response above was stopped by a safety classifier.")}),
+		at(39, schema.Event{EventType: schema.HarnessNotice, TurnID: "p1", Origin: schema.OriginTranscript, AgentVersion: "2.1.296",
+			Content: txt("claude-code version changed from 2.1.295 to 2.1.296"), Notice: &schema.Notice{Kind: "agent_version_change", Level: "notice"}}),
+		at(1, schema.Event{EventType: schema.TurnEnd, AgentVersion: "2.1.295"}),
 	}
 }
 
@@ -89,8 +96,9 @@ func TestReplayGolden(t *testing.T) {
 
 func TestSummarize(t *testing.T) {
 	s := Summarize(synthetic())
-	if s.Turns != 3 || s.ToolCalls != 6 || s.Highlight != 1 || s.Status != "ended (user_exit)" || s.Runs != 1 ||
-		len(s.Models) != 1 || s.Models[0] != "claude-sonnet-5-5" {
+	if s.Turns != 2 || s.ToolCalls != 6 || s.Highlight != 1 || s.Status != "ended (user_exit)" || s.Runs != 1 ||
+		len(s.Models) != 1 || s.Models[0] != "claude-sonnet-5-5" || s.Notices != 2 ||
+		strings.Join(s.Versions, ",") != "2.1.295,2.1.296" {
 		t.Fatalf("summary = %+v", s)
 	}
 	resumed := append(synthetic(), schema.Event{Session: "abc123", EventType: schema.SessionStart, Source: "resume",

@@ -154,3 +154,39 @@ func TestAssistantModel(t *testing.T) {
 		t.Fatalf("synthetic model kept: %+v", recs)
 	}
 }
+
+const sonnetFixture = "../../testdata/claude-code/2.1.296/transcript-sonnet-fallback.jsonl"
+
+func TestNoticesMetaAndVersion(t *testing.T) {
+	recs, _, err := ReadFrom(sonnetFixture, 0, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fallbacks, stops, meta int
+	for _, r := range recs {
+		if r.Version != "2.1.296" {
+			t.Fatalf("record without version 2.1.296: %+v", r)
+		}
+		switch {
+		case r.Kind == Notice && r.Notice.Subtype == "model_refusal_fallback":
+			fallbacks++
+			n := r.Notice
+			if n.Category != "cyber" || n.OriginalModel != "claude-sonnet-5-5" || n.FallbackModel != "claude-sonnet-5" ||
+				n.Level != "warning" || n.Scope != "session" || !strings.Contains(r.Text, "Sonnet 5 is answering instead") {
+				t.Errorf("fallback notice = %+v %q", n, r.Text)
+			}
+		case r.Kind == Notice && r.Notice.Subtype == "informational":
+			stops++
+		case r.Kind == Notice:
+			t.Errorf("unexpected notice kept: %+v", r.Notice) // e.g. stop_hook_summary must be dropped
+		case r.Kind == Prompt && r.Meta:
+			meta++
+			if !strings.HasPrefix(r.Text, "Your response above was stopped by a safety classifier") {
+				t.Errorf("meta prompt = %q", r.Text)
+			}
+		}
+	}
+	if fallbacks != 6 || stops != 6 || meta != 6 {
+		t.Fatalf("fallbacks=%d stops=%d meta=%d; want 6 each", fallbacks, stops, meta)
+	}
+}

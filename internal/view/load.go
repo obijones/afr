@@ -89,6 +89,8 @@ type Summary struct {
 	Cwd       string
 	Agent     string
 	Models    []string // models that wrote replies, in order of first use
+	Versions  []string // harness versions seen, in order
+	Notices   int      // harness notices: safeguard stops, model fallbacks, version changes
 }
 
 // Summarize computes a session's summary from its events.
@@ -112,6 +114,9 @@ func Summarize(events []schema.Event) Summary {
 		if e.Model != "" && !slices.Contains(s.Models, e.Model) {
 			s.Models = append(s.Models, e.Model)
 		}
+		if e.AgentVersion != "" && !slices.Contains(s.Versions, e.AgentVersion) {
+			s.Versions = append(s.Versions, e.AgentVersion)
+		}
 		s.Highlight += len(e.Highlights)
 		switch e.EventType {
 		case schema.SessionStart:
@@ -124,7 +129,11 @@ func Summarize(events []schema.Event) Summary {
 				s.Status += " (" + e.EndReason + ")"
 			}
 		case schema.PromptSubmit:
-			s.Turns++
+			if e.Origin == "" { // typed by a person; harness-injected messages are not turns
+				s.Turns++
+			}
+		case schema.HarnessNotice:
+			s.Notices++
 		case schema.ToolCall:
 			s.ToolCalls++
 		}

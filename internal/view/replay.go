@@ -51,9 +51,14 @@ func Replay(w io.Writer, events []schema.Event, integrity string, o Options) err
 	if models == "" {
 		models = "unknown"
 	}
-	fmt.Fprintf(w, "SESSION %s  %s@%s  %s  %s  model: %s\n", sum.Session, sum.User, sum.Host, sum.Cwd, sum.Agent, models)
-	fmt.Fprintf(w, "%s  %s, %s, %s  integrity: %s\n\n", start.Format("2006-01-02 MST"),
-		plural(sum.Turns, "turn"), plural(sum.ToolCalls, "tool call"), plural(sum.Highlight, "highlight"), integrity)
+	agent := sum.Agent
+	if len(sum.Versions) > 0 {
+		agent += " " + strings.Join(sum.Versions, " -> ")
+	}
+	fmt.Fprintf(w, "SESSION %s  %s@%s  %s  %s  model: %s\n", sum.Session, sum.User, sum.Host, sum.Cwd, agent, models)
+	fmt.Fprintf(w, "%s  %s, %s, %s, %s  integrity: %s\n\n", start.Format("2006-01-02 MST"),
+		plural(sum.Turns, "turn"), plural(sum.ToolCalls, "tool call"), plural(sum.Highlight, "highlight"),
+		plural(sum.Notices, "harness notice"), integrity)
 
 	calls := map[string]bool{}
 	for _, e := range evs {
@@ -188,11 +193,51 @@ func (r *replayer) event(e schema.Event) {
 			reason = "ended"
 		}
 		r.line(e, "END", reason)
+	case schema.HarnessNotice:
+		r.line(e, "NOTICE", noticeSummary(e))
+		r.detail("notice", c.Text)
+		if e.Notice != nil {
+			r.detail("explanation", e.Notice.Explanation)
+		}
 	case schema.AfrError:
 		r.line(e, "NOTE", "afr: "+oneLine(c.Text))
 	default:
 		r.line(e, "NOTE", e.HookEvent)
 	}
+}
+
+// noticeSummary puts what a reviewer needs first: level, and for a model
+// fallback the category and the switch, then the harness's own words.
+func noticeSummary(e schema.Event) string {
+	n := e.Notice
+	if n == nil {
+		n = &schema.Notice{}
+	}
+	text := ""
+	if e.Content != nil {
+		text = oneLine(e.Content.Text)
+	}
+	level := strings.ToUpper(n.Level)
+	if level == "" {
+		level = "NOTICE"
+	}
+	s := "[" + level + "] "
+	switch {
+	case n.Kind == "model_refusal_fallback":
+		s += "safeguards flagged this"
+		if n.Category != "" {
+			s += " (" + n.Category + ")"
+		}
+		if n.OriginalModel != "" || n.FallbackModel != "" {
+			s += ": " + n.OriginalModel + " -> " + n.FallbackModel
+		}
+		if n.Scope != "" {
+			s += " for the " + n.Scope
+		}
+	default:
+		s += text
+	}
+	return s
 }
 
 // toolSummary picks the input field a reviewer needs to see for common
@@ -441,8 +486,8 @@ func SessionTable(w io.Writer, rows []Summary, loc *time.Location) error {
 		_, err := fmt.Fprintln(w, "no sessions recorded yet")
 		return err
 	}
-	_, err := fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5s  %5s  %4s  %-18s  %-20s  %-30s  %s\n",
-		"STARTED", "LAST", "STATUS", "TURNS", "TOOLS", "HIGH", "MODEL", "USER@HOST", "DIR", "SESSION")
+	_, err := fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5s  %5s  %4s  %6s  %-18s  %-20s  %-30s  %s\n",
+		"STARTED", "LAST", "STATUS", "TURNS", "TOOLS", "HIGH", "NOTICE", "MODEL", "USER@HOST", "DIR", "SESSION")
 	for _, s := range rows {
 		if err != nil {
 			return err
@@ -459,9 +504,9 @@ func SessionTable(w io.Writer, rows []Summary, loc *time.Location) error {
 		default:
 			model = s.Models[len(s.Models)-1] + "+"
 		}
-		_, err = fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5d  %5d  %4d  %-18s  %-20s  %-30s  %s\n",
+		_, err = fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5d  %5d  %4d  %6d  %-18s  %-20s  %-30s  %s\n",
 			s.Started.In(loc).Format("2006-01-02 15:04"), last, cut(s.Status, 16), s.Turns, s.ToolCalls, s.Highlight,
-			cut(model, 18), cut(s.User+"@"+s.Host, 20), cutLeft(s.Cwd, 30), s.Session)
+			s.Notices, cut(model, 18), cut(s.User+"@"+s.Host, 20), cutLeft(s.Cwd, 30), s.Session)
 	}
 	return err
 }

@@ -262,3 +262,87 @@ func TestTranscriptShrinkDoesNotDuplicate(t *testing.T) {
 		t.Fatalf("after shrink log has %d events, want %d", got, n+1)
 	}
 }
+
+const sonnetFixture = "../../testdata/claude-code/2.1.296/transcript-sonnet-fallback.jsonl"
+
+// recordSonnet replays the Sonnet fallback session as hooks would have
+// recorded it (typed prompts and every tool call that reached a hook),
+// ending with a session-end catch-up.
+func recordSonnet(t *testing.T, dir string) string {
+	t.Helper()
+	tpath := filepath.Join(dir, "sonnet.jsonl")
+	data, err := os.ReadFile(sonnetFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(tpath, data, 0o600)
+	recs, _, _ := transcript.ReadFrom(tpath, 0, 16<<20)
+	for _, r := range recs {
+		switch {
+		case r.Kind == transcript.Prompt && !r.Meta:
+			mustRecord(t, dir, hook(tpath, schema.PromptSubmit, r.PromptID, "", "", false))
+		case r.Kind == transcript.ToolUse:
+			mustRecord(t, dir, hook(tpath, schema.ToolCall, "", r.ToolID, "", false))
+		}
+	}
+	mustRecord(t, dir, hook(tpath, schema.SessionEnd, "", "", "", true))
+	return tpath
+}
+
+func TestNoticesAndInjectedMessagesRecorded(t *testing.T) {
+	dir := t.TempDir()
+	recordSonnet(t, dir)
+	var fallbacks, stops, injected int
+	for _, e := range logEvents(t, dir) {
+		if e.AgentVersion != "2.1.296" && e.EventType != schema.PromptSubmit && e.EventType != schema.ToolCall {
+			t.Errorf("%s event without agent version: %+v", e.EventType, e)
+		}
+		switch {
+		case e.EventType == schema.HarnessNotice && e.Notice.Kind == "model_refusal_fallback":
+			fallbacks++
+			if e.Notice.FallbackModel != "claude-sonnet-5" || e.Notice.Category != "cyber" || e.TranscriptUUID == "" {
+				t.Errorf("fallback event = %+v", e.Notice)
+			}
+		case e.EventType == schema.HarnessNotice && e.Notice.Kind == "informational":
+			stops++
+		case e.EventType == schema.PromptSubmit && e.Origin == schema.OriginTranscript:
+			injected++
+		}
+	}
+	// The six companion messages share promptIds with real prompts; they
+	// must still be recorded.
+	if fallbacks != 6 || stops != 6 || injected != 6 {
+		t.Fatalf("fallbacks=%d stops=%d injected=%d; want 6 each", fallbacks, stops, injected)
+	}
+}
+
+func TestReseedSkipsByUUID(t *testing.T) {
+	dir := t.TempDir()
+	tpath := recordSonnet(t, dir)
+	before := len(logEvents(t, dir))
+	os.Remove(statePath(dir, sid))
+	mustRecord(t, dir, hook(tpath, schema.SessionEnd, "", "", "", true))
+	if after := len(logEvents(t, dir)); after != before+1 {
+		t.Fatalf("lost state re-read added %d events, want only the hook's 1", after-before)
+	}
+}
+
+func TestVersionChangeNotice(t *testing.T) {
+	dir := t.TempDir()
+	tpath := filepath.Join(dir, "t.jsonl")
+	ls := lines(t)
+	for i := range ls[:len(ls)/2] {
+		ls[i] = strings.Replace(ls[i], `"version":"2.1.295"`, `"version":"2.1.294"`, 1)
+	}
+	writeTranscript(t, tpath, ls)
+	mustRecord(t, dir, hook(tpath, schema.SessionEnd, "", "", "", true))
+	var changes []string
+	for _, e := range logEvents(t, dir) {
+		if e.EventType == schema.HarnessNotice && e.Notice.Kind == "agent_version_change" {
+			changes = append(changes, e.Content.Text)
+		}
+	}
+	if len(changes) != 1 || !strings.Contains(changes[0], "from 2.1.294 to 2.1.295") {
+		t.Fatalf("version change notices = %q", changes)
+	}
+}

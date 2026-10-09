@@ -41,11 +41,16 @@ type State struct {
 	Offset         int64  `json:"offset"`
 	PromptID       string `json:"prompt_id"` // current turn while scanning the transcript
 	Model          string `json:"model"`     // latest model seen in the transcript
+	Version        string `json:"version"`   // latest harness version seen in the transcript
 
 	HookToolIDs       []string `json:"hook_tool_ids"`       // tool calls hooks recorded, not yet seen in the transcript
 	HookPromptIDs     []string `json:"hook_prompt_ids"`     // prompts hooks recorded
 	TranscriptToolIDs []string `json:"transcript_tool_ids"` // tool calls recovered from the transcript, awaiting results
 	PendingReplies    []string `json:"pending_replies"`     // hashes of final replies logged from Stop before the transcript had them
+
+	// seen holds transcript uuids already in the log. Filled only when
+	// state is rebuilt from the log, for the re-read that follows.
+	seen map[string]bool
 }
 
 func statePath(dataDir, session string) string {
@@ -109,6 +114,9 @@ func Record(dataDir string, c *collect.Converted) error {
 			if events[i].EventType == schema.AssistantMessage && events[i].Model == "" {
 				events[i].Model = st.Model // the Stop reply: written by the latest model seen
 			}
+			if events[i].AgentVersion == "" {
+				events[i].AgentVersion = st.Version
+			}
 		}
 		if err := w.Append(append(recovered, events...)); err != nil {
 			return err
@@ -130,6 +138,13 @@ func (st *State) recover(recs []transcript.Record, base schema.Event, reply stri
 		if r.Model != "" {
 			st.Model = r.Model
 		}
+		prevVersion := st.Version
+		if r.Version != "" {
+			st.Version = r.Version
+		}
+		if st.seen[r.UUID] && r.UUID != "" {
+			continue // already in the log (state was rebuilt)
+		}
 		e := base
 		e.EventID = schema.NewEventID(r.TS)
 		e.TS = r.TS.UTC()
@@ -139,13 +154,37 @@ func (st *State) recover(recs []transcript.Record, base schema.Event, reply stri
 		if st.PromptID != "" {
 			e.PromptRef = e.Session + "#" + st.PromptID
 		}
+		e.AgentVersion = st.Version
+
+		if prevVersion != "" && r.Version != "" && r.Version != prevVersion {
+			// The harness updated itself mid-session (seen: Claude Code
+			// 2.1.295 to 2.1.296 between resumed runs).
+			v := e
+			v.EventID = schema.NewEventID(r.TS)
+			v.TranscriptUUID = ""
+			v.EventType = schema.HarnessNotice
+			v.Notice = &schema.Notice{Kind: "agent_version_change", Level: "notice"}
+			v.Content = text(fmt.Sprintf("%s version changed from %s to %s", base.Agent, prevVersion, r.Version))
+			out = append(out, v)
+		}
 
 		switch r.Kind {
+		case transcript.Notice:
+			e.EventType = schema.HarnessNotice
+			e.Content = text(r.Text)
+			if n := r.Notice; n != nil {
+				e.Notice = &schema.Notice{
+					Kind: n.Subtype, Level: n.Level, Category: n.Category, Explanation: n.Explanation,
+					OriginalModel: n.OriginalModel, FallbackModel: n.FallbackModel, Trigger: n.Trigger, Scope: n.Scope,
+				}
+			}
 		case transcript.Skipped:
 			e.EventType = schema.AfrError
 			e.Content = text(fmt.Sprintf("transcript line of %d bytes skipped: larger than one read", r.Bytes))
 		case transcript.Prompt:
-			if slices.Contains(st.HookPromptIDs, r.PromptID) {
+			// A message the harness wrote itself (isMeta) can reuse the
+			// prompt's promptId, so it is never matched against hook prompts.
+			if !r.Meta && slices.Contains(st.HookPromptIDs, r.PromptID) {
 				continue
 			}
 			// A message the harness injected (such as a background task
@@ -249,12 +288,16 @@ func (st *State) seedFromLog(path string) error {
 	defer f.Close()
 	st.Offset = 0
 	st.HookToolIDs, st.HookPromptIDs, st.TranscriptToolIDs, st.PendingReplies = nil, nil, nil, nil
+	st.seen = map[string]bool{}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for sc.Scan() {
 		var e schema.Event
 		if json.Unmarshal(sc.Bytes(), &e) != nil {
 			continue
+		}
+		if e.TranscriptUUID != "" {
+			st.seen[e.TranscriptUUID] = true
 		}
 		switch e.EventType {
 		case schema.ToolCall:
@@ -264,7 +307,9 @@ func (st *State) seedFromLog(path string) error {
 		case schema.PromptSubmit:
 			st.HookPromptIDs = remember(st.HookPromptIDs, e.TurnID)
 		case schema.AssistantMessage:
-			if e.Content != nil {
+			// Replies recovered from the transcript are skipped by uuid;
+			// only Stop replies (no uuid) need matching by text.
+			if e.Content != nil && e.Origin == "" {
 				st.PendingReplies = append(st.PendingReplies, hash(e.Content.Text))
 			}
 		}

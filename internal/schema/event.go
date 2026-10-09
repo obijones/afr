@@ -28,7 +28,8 @@ const (
 	SubagentEnd      = "subagent.end"
 	TurnEnd          = "turn.end"
 	SessionEnd       = "session.end"
-	HarnessOther     = "harness.other" // a hook afr records but does not interpret
+	HarnessOther     = "harness.other"  // a hook afr records but does not interpret
+	HarnessNotice    = "harness.notice" // a notice the harness wrote: a safeguard stop, a model fallback, a version change
 	AfrError         = "afr.error"
 )
 
@@ -53,9 +54,12 @@ type Event struct {
 	Host      string    `json:"host"`
 	Agent     string    `json:"agent"`
 	Model     string    `json:"model,omitempty"` // the model that wrote an AI reply
-	Cwd       string    `json:"cwd,omitempty"`
-	EventType string    `json:"event_type"`
-	HookEvent string    `json:"hook_event,omitempty"`
+	// AgentVersion is the harness version, from its transcript; empty
+	// until the first transcript read in a session.
+	AgentVersion string `json:"agent_version,omitempty"`
+	Cwd          string `json:"cwd,omitempty"`
+	EventType    string `json:"event_type"`
+	HookEvent    string `json:"hook_event,omitempty"`
 	// Origin is "transcript" for events recovered from the harness
 	// transcript rather than a hook; empty means a hook.
 	Origin         string `json:"origin,omitempty"`
@@ -66,9 +70,10 @@ type Event struct {
 	DurationMS *int64 `json:"duration_ms,omitempty"`
 	ToolError  bool   `json:"tool_error,omitempty"` // the tool call failed or was refused
 
-	Source         string `json:"source,omitempty"`     // session.start: startup, resume, ...
-	EndReason      string `json:"end_reason,omitempty"` // session.end
-	TranscriptPath string `json:"transcript_path,omitempty"`
+	Source         string  `json:"source,omitempty"`     // session.start: startup, resume, ...
+	EndReason      string  `json:"end_reason,omitempty"` // session.end
+	TranscriptPath string  `json:"transcript_path,omitempty"`
+	Notice         *Notice `json:"notice,omitempty"` // harness.notice
 
 	Content     *Content    `json:"content,omitempty"`
 	Highlights  []Highlight `json:"highlights,omitempty"`
@@ -84,6 +89,19 @@ type Content struct {
 	Output    json.RawMessage `json:"output,omitempty"`
 	Truncated bool            `json:"truncated,omitempty"`
 	Bytes     int             `json:"bytes,omitempty"` // original size of the largest cut field
+}
+
+// Notice is the structured part of a harness.notice event; its message
+// is in Content.Text.
+type Notice struct {
+	Kind          string `json:"kind"`                     // harness subtype, or "agent_version_change"
+	Level         string `json:"level,omitempty"`          // notice, warning, error
+	Category      string `json:"category,omitempty"`       // refusal category, such as "cyber"
+	Explanation   string `json:"explanation,omitempty"`    // refusal explanation from the API
+	OriginalModel string `json:"original_model,omitempty"` // model fallback: from
+	FallbackModel string `json:"fallback_model,omitempty"` // model fallback: to
+	Trigger       string `json:"trigger,omitempty"`
+	Scope         string `json:"scope,omitempty"`
 }
 
 // Highlight tags an event for reviewers. It never blocks anything.
