@@ -75,6 +75,11 @@ What the script grants `claude -p`: Read, Write, Edit, and Agent without restric
 shell permission only for the exact commands its turns dictate. Commands run against your
 real machine, confined only by the working directory, so read the script before running it.
 
+## Findings
+
+Unexpected agent and harness behavior that testing revealed, with evidence and what it
+means for afr: [docs/findings.md](docs/findings.md).
+
 ## Threat model
 
 What afr protects, who it guards against, and what it does not do:
