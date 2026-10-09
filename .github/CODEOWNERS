@@ -1,0 +1,3 @@
+# Changes to workflows and repository automation need the owner's review.
+# Enforced only when branch protection requires code owner reviews.
+/.github/ @obijones
