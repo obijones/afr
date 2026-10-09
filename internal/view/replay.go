@@ -74,15 +74,18 @@ type replayer struct {
 	err     error
 }
 
-func (r *replayer) prefix(e schema.Event) string {
+// prefixFor builds the start of a line: time, kind, turn, then any
+// highlights and the subagent tag. Built without a format string, since
+// rule ids and agent types come from captured data.
+func (r *replayer) prefixFor(e schema.Event, kind string) string {
 	turn := r.turns[e.TurnID]
 	if turn == "" {
 		turn = "-"
 	}
-	p := fmt.Sprintf("%s  %%-9s %-3s ", e.TS.In(r.o.Loc).Format("15:04:05"), turn)
+	p := fmt.Sprintf("%s  %-9s %-3s ", e.TS.In(r.o.Loc).Format("15:04:05"), kind, turn)
 	// Highlights go first, so a long line can never cut them off.
 	for _, h := range e.Highlights {
-		p += fmt.Sprintf("[%s %s] ", strings.ToUpper(h.Severity), h.RuleID)
+		p += "[" + strings.ToUpper(h.Severity) + " " + h.RuleID + "] "
 	}
 	if e.AgentType != "" {
 		p += "[" + e.AgentType + "] "
@@ -91,7 +94,7 @@ func (r *replayer) prefix(e schema.Event) string {
 }
 
 func (r *replayer) line(e schema.Event, kind, text string) {
-	s := fmt.Sprintf(r.prefix(e), kind) + text
+	s := neutralize(r.prefixFor(e, kind)+text, false)
 	if len(s) > r.o.Width {
 		s = cut(s, r.o.Width-3) + "..."
 	}
@@ -104,7 +107,7 @@ func (r *replayer) detail(label, body string) {
 		return
 	}
 	r.write("          " + label + ":\n")
-	for _, l := range strings.Split(strings.TrimRight(body, "\n"), "\n") {
+	for _, l := range strings.Split(strings.TrimRight(neutralize(body, true), "\n"), "\n") {
 		r.write("            " + l + "\n")
 	}
 }
@@ -152,7 +155,7 @@ func (r *replayer) event(e schema.Event) {
 		head := fmt.Sprintf("%-5s  ", name)
 		const sep = "  ->  "
 		summary, st := oneLine(toolSummary(e.Tool, c.Input)), oneLine(status)
-		avail := r.o.Width - len(fmt.Sprintf(r.prefix(e), "TOOL")) - len(head) - len(sep)
+		avail := r.o.Width - len(neutralize(r.prefixFor(e, "TOOL"), false)) - len(head) - len(sep)
 		if len(summary)+len(st) > avail {
 			if maxSt := max(avail*2/5, 24); len(st) > maxSt {
 				st = cut(st, maxSt-3) + "..."
@@ -334,6 +337,56 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+// neutralize makes captured text safe to print to a terminal. Control
+// characters (ANSI escapes, carriage returns that overwrite a line) and
+// bidirectional overrides that reorder text could hide or disguise what
+// the reviewer reads, so they are shown as visible escapes instead.
+// Newlines and tabs are kept only when keepLines is set.
+func neutralize(s string, keepLines bool) string {
+	clean := true
+	for _, r := range s {
+		if unsafeRune(r, keepLines) {
+			clean = false
+			break
+		}
+	}
+	if clean {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case !unsafeRune(r, keepLines):
+			b.WriteRune(r)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		default:
+			fmt.Fprintf(&b, "<U+%04X>", r)
+		}
+	}
+	return b.String()
+}
+
+func unsafeRune(r rune, keepLines bool) bool {
+	switch {
+	case r == '\n' || r == '\t':
+		return !keepLines
+	case r < 0x20 || r == 0x7f: // C0 controls and DEL, including ESC and CR
+		return true
+	case r >= 0x80 && r <= 0x9f: // C1 controls
+		return true
+	case r == 0x200e || r == 0x200f || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069): // bidi controls
+		return true
+	}
+	return false
 }
 
 func quote(s string) string { return `"` + s + `"` }
