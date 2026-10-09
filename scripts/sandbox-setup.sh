@@ -12,7 +12,7 @@ bin="$repo/bin/afr"
 make -C "$repo" build >/dev/null
 mkdir -p "$sandbox/.claude"
 
-cmd="AFR_HOME=$sandbox/.afr-data $bin hook"
+cmd="AFR_HOME=$sandbox/.afr-data AFR_CAPTURE_RAW=1 $bin hook"
 hook() { printf '[{"hooks":[{"type":"command","command":"%s"}]}]' "$cmd"; }
 tool_hook() { printf '[{"matcher":"*","hooks":[{"type":"command","command":"%s"}]}]' "$cmd"; }
 

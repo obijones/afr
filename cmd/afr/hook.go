@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime/debug"
 	"time"
 
 	"github.com/obijones/afr/internal/collect"
 	"github.com/obijones/afr/internal/platform"
+	"github.com/obijones/afr/internal/store"
 )
 
 const maxPayload = 32 << 20 // 32 MiB; larger payloads are cut and logged
@@ -51,10 +53,45 @@ func runHook(stdin io.Reader) (code int) {
 		logError("data dir: " + err.Error())
 		return 0
 	}
-	if _, err := collect.SaveRaw(dataDir, payload, time.Now()); err != nil {
-		logError("save raw payload: " + err.Error())
+	now := time.Now()
+	saveRaw := func() {
+		if _, err := collect.SaveRaw(dataDir, payload, now); err != nil {
+			logError("save raw payload: " + err.Error())
+		}
+	}
+	if os.Getenv("AFR_CAPTURE_RAW") == "1" {
+		saveRaw()
+	}
+
+	events, err := collect.FromClaudeCode(payload, now, identity())
+	if err != nil {
+		// Keep what we could not interpret, so nothing is silently lost.
+		logError("convert payload: " + err.Error())
+		if os.Getenv("AFR_CAPTURE_RAW") != "1" {
+			saveRaw()
+		}
+		return 0
+	}
+	if err := store.Append(dataDir, events); err != nil {
+		logError("append events: " + err.Error())
+		if os.Getenv("AFR_CAPTURE_RAW") != "1" {
+			saveRaw() // keep the payload so the event can be recovered
+		}
 	}
 	return 0
+}
+
+// identity reports the OS user and host. Bound to SSO or device identity
+// in managed deployments later (see the attribution section of the plan).
+func identity() collect.Identity {
+	id := collect.Identity{}
+	if u, err := user.Current(); err == nil {
+		id.User = u.Username
+	}
+	if h, err := os.Hostname(); err == nil {
+		id.Host = h
+	}
+	return id
 }
 
 // readWithTimeout reads r until EOF, max bytes, or timeout, whichever

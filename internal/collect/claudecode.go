@@ -1,0 +1,138 @@
+package collect
+
+import (
+	"encoding/json"
+	"errors"
+	"time"
+
+	"github.com/obijones/afr/internal/schema"
+)
+
+// Identity is who and where the session ran, filled once per hook call.
+type Identity struct {
+	User string
+	Host string
+}
+
+// claudePayload holds the Claude Code hook fields afr reads. Field names
+// match payloads captured from Claude Code 2.1.295 (testdata/claude-code).
+type claudePayload struct {
+	HookEventName        string          `json:"hook_event_name"`
+	SessionID            string          `json:"session_id"`
+	PromptID             string          `json:"prompt_id"`
+	TranscriptPath       string          `json:"transcript_path"`
+	Cwd                  string          `json:"cwd"`
+	Source               string          `json:"source"`
+	Reason               string          `json:"reason"`
+	Prompt               string          `json:"prompt"`
+	ToolName             string          `json:"tool_name"`
+	ToolUseID            string          `json:"tool_use_id"`
+	ToolInput            json.RawMessage `json:"tool_input"`
+	ToolResponse         json.RawMessage `json:"tool_response"`
+	DurationMS           *int64          `json:"duration_ms"`
+	AgentID              string          `json:"agent_id"`
+	AgentType            string          `json:"agent_type"`
+	AgentTranscriptPath  string          `json:"agent_transcript_path"`
+	LastAssistantMessage string          `json:"last_assistant_message"`
+}
+
+// ErrNotClaudeCode means the payload lacks the fields every Claude Code
+// hook payload carries.
+var ErrNotClaudeCode = errors.New("payload is not a Claude Code hook payload")
+
+// FromClaudeCode converts one Claude Code hook payload into unsealed
+// events (Seq and hashes are set by the store). Stop yields two events:
+// the final reply and the turn end.
+func FromClaudeCode(payload []byte, now time.Time, id Identity) ([]schema.Event, error) {
+	var p claudePayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return nil, err
+	}
+	if p.SessionID == "" || p.HookEventName == "" {
+		return nil, ErrNotClaudeCode
+	}
+
+	base := schema.Event{
+		Schema:    schema.Version,
+		EventID:   schema.NewEventID(now),
+		TS:        now.UTC(),
+		Session:   p.SessionID,
+		TurnID:    p.PromptID,
+		AgentID:   p.AgentID,
+		AgentType: p.AgentType,
+		User:      id.User,
+		Host:      id.Host,
+		Agent:     "claude-code",
+		Cwd:       p.Cwd,
+		HookEvent: p.HookEventName,
+	}
+	if p.PromptID != "" {
+		base.PromptRef = p.SessionID + "#" + p.PromptID
+	}
+
+	e := base
+	switch p.HookEventName {
+	case "SessionStart":
+		e.EventType = schema.SessionStart
+		e.Source = p.Source
+		e.TranscriptPath = p.TranscriptPath
+	case "UserPromptSubmit":
+		e.EventType = schema.PromptSubmit
+		e.Content = textContent(p.Prompt)
+	case "PreToolUse":
+		e.EventType = schema.ToolCall
+		e.Tool, e.ToolCallID = p.ToolName, p.ToolUseID
+		e.Content = jsonContent(p.ToolInput, nil)
+	case "PostToolUse":
+		e.EventType = schema.ToolResult
+		e.Tool, e.ToolCallID = p.ToolName, p.ToolUseID
+		e.DurationMS = p.DurationMS
+		e.Content = jsonContent(nil, p.ToolResponse)
+	case "Stop":
+		e.EventType = schema.TurnEnd
+		if p.LastAssistantMessage != "" {
+			reply := base
+			reply.EventType = schema.AssistantMessage
+			reply.Content = textContent(p.LastAssistantMessage)
+			end := e
+			end.EventID = schema.NewEventID(now)
+			return []schema.Event{reply, end}, nil
+		}
+	case "SubagentStop":
+		e.EventType = schema.SubagentEnd
+		e.TranscriptPath = p.AgentTranscriptPath
+		e.Content = textContent(p.LastAssistantMessage)
+	case "SessionEnd":
+		e.EventType = schema.SessionEnd
+		e.EndReason = p.Reason
+	default:
+		e.EventType = schema.HarnessOther
+	}
+	return []schema.Event{e}, nil
+}
+
+func textContent(s string) *schema.Content {
+	if s == "" {
+		return nil
+	}
+	text, n, cut := schema.CapText(s)
+	return &schema.Content{Text: text, Truncated: cut, Bytes: n}
+}
+
+func jsonContent(in, out json.RawMessage) *schema.Content {
+	if len(in) == 0 && len(out) == 0 {
+		return nil
+	}
+	c := &schema.Content{}
+	var n1, n2 int
+	var cut1, cut2 bool
+	if len(in) > 0 {
+		c.Input, n1, cut1 = schema.CapJSON(in)
+	}
+	if len(out) > 0 {
+		c.Output, n2, cut2 = schema.CapJSON(out)
+	}
+	c.Truncated = cut1 || cut2
+	c.Bytes = max(n1, n2)
+	return c
+}

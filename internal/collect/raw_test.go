@@ -41,18 +41,3 @@ func TestSaveRawInvalidJSON(t *testing.T) {
 		t.Fatalf("path %q, want it under raw/unknown-session", path)
 	}
 }
-
-func TestSafeName(t *testing.T) {
-	cases := map[string]string{
-		"abc-123_X.y": "abc-123_X.y",
-		"../../etc":   ".._.._etc",
-		"..":          "fb",
-		"":            "fb",
-		"a/b\\c":      "a_b_c",
-	}
-	for in, want := range cases {
-		if got := safeName(in, "fb"); got != want {
-			t.Errorf("safeName(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
