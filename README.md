@@ -5,9 +5,12 @@ AI session from start to end (prompts, AI replies, tool calls and their results)
 reviewer can replay it later and see exactly what the AI tool did. It only records; it
 never blocks or changes anything the agent does.
 
-Status: early development (Week 1). `afr hook` turns each Claude Code hook payload into
-normalized events and appends them to a per-session log with a hash chain; `afr verify`
-checks that chain. Session listing and replay come next.
+Status: early development (Week 2). `afr hook` turns each Claude Code hook payload into
+normalized events and appends them to a per-session log with a hash chain. At each prompt,
+turn end, and session end it also reads new lines of Claude Code's transcript to recover
+what hooks do not carry: AI replies between tool calls, tool calls the harness rejected
+before any hook ran, and messages the harness injected. `afr verify` checks the chain.
+Session listing and replay come next.
 
 ## Build and test
 
@@ -48,6 +51,11 @@ Windows. All files are owner-only.
 - `sessions/<session-id>.ndjson`: one event per line (schema in `internal/schema`), each
   with `seq`, `prev_hash`, and `hash`. The hash covers `content_hash` instead of the
   content, so content can be purged later without breaking the chain.
+  Events recovered from the transcript carry `"origin": "transcript"`; events are in write
+  order (`seq`), so sort by `ts` to read a session in the order things happened.
+- `sessions/<session-id>.state.json`: the transcript read offset and the ids already
+  logged, so recovery never records anything twice. If it is lost, it is rebuilt from the
+  log. `sessions/<session-id>.ndjson.lock` is the per-session write lock.
 - `raw/<session-id>/`: raw payloads (opt-in, or when a payload is not recognized).
 - `afr-errors.log`: anything that went wrong inside a hook call.
 
