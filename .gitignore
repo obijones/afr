@@ -8,3 +8,6 @@
 
 # Local Claude Code settings used for sandbox testing
 .claude/settings.local.json
+
+# Project handoff and planning notes stay local; never commit them
+*handoff*.md
