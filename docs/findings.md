@@ -61,14 +61,18 @@ so availability does not mean use. ([Advisor](https://code.claude.com/docs/en/ad
 **What it means for afr.**
 
 1. The `model` field works and is worth keeping: it was the only visible sign in afr.
-2. **Gap: afr does not record harness notices.** The transcript reader skips `system`
-   records, so the classifier stop and the model switch (with category, original and
-   fallback model) are invisible in the replay. Add a `harness.notice` event for
-   `model_refusal_fallback` and `informational` records, shown in replay.
-3. **Gap: the injected companion message was dropped.** It reuses the real prompt's
-   `promptId`, and afr deduplicates prompts by `promptId`. Deduplicate by transcript
-   `uuid` instead, and mark `isMeta` messages as harness-injected.
-4. **Gap: no agent version.** Claude Code auto-updated 2.1.295 to 2.1.296 between runs;
-   transcript records carry `version`. Record it.
+2. **Gap: afr did not record harness notices.** Fixed on branch `fix/harness-notices`:
+   `system` records at notice, warning, or error level, and every `model_refusal_fallback`,
+   become `harness.notice` events with the category and the original and fallback model.
+   Replay shows `[WARNING] safeguards flagged this (cyber): claude-sonnet-5-5 ->
+   claude-sonnet-5 for the session`.
+3. **Gap: the injected companion message was dropped.** Fixed: harness-written messages
+   (`isMeta`) are recorded as harness-injected and never matched against hook prompts by
+   `promptId`; a rebuilt state skips records by transcript `uuid`.
+4. **Gap: no agent version.** Fixed: every event carries `agent_version` from the
+   transcript (empty until the first transcript read in a session), the replay header
+   shows it, and a version change mid-session becomes a `harness.notice`.
 5. For the seeded scenario, Sonnet 5.5's classifier blocks the threat turns, so Haiku stays
    the default; a Sonnet run is itself a good test of how afr shows a model switch.
+6. The classifier is not deterministic for the same prompt: a later two-turn Sonnet session
+   with the same `curl | sh` prompt (but less security-test history) was not flagged.
