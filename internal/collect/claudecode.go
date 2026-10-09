@@ -40,10 +40,19 @@ type claudePayload struct {
 // hook payload carries.
 var ErrNotClaudeCode = errors.New("payload is not a Claude Code hook payload")
 
-// FromClaudeCode converts one Claude Code hook payload into unsealed
-// events (Seq and hashes are set by the store). Stop yields two events:
-// the final reply and the turn end.
-func FromClaudeCode(payload []byte, now time.Time, id Identity) ([]schema.Event, error) {
+// Converted is one hook payload turned into afr events, plus what the
+// transcript reader needs to fill the gaps hooks leave.
+type Converted struct {
+	Events         []schema.Event // unsealed; the store sets seq and hashes
+	Base           schema.Event   // shared fields, a template for recovered events
+	TranscriptPath string
+	ReadTranscript bool   // this hook is a point to catch up on the transcript
+	Reply          string // final reply text carried by Stop, if any
+}
+
+// FromClaudeCode converts one Claude Code hook payload. Stop yields two
+// events: the final reply and the turn end.
+func FromClaudeCode(payload []byte, now time.Time, id Identity) (*Converted, error) {
 	var p claudePayload
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return nil, err
@@ -70,6 +79,10 @@ func FromClaudeCode(payload []byte, now time.Time, id Identity) ([]schema.Event,
 		base.PromptRef = p.SessionID + "#" + p.PromptID
 	}
 
+	c := &Converted{Base: base, TranscriptPath: p.TranscriptPath}
+	c.Base.EventID = ""
+	c.Base.HookEvent = ""
+
 	e := base
 	switch p.HookEventName {
 	case "SessionStart":
@@ -77,6 +90,7 @@ func FromClaudeCode(payload []byte, now time.Time, id Identity) ([]schema.Event,
 		e.Source = p.Source
 		e.TranscriptPath = p.TranscriptPath
 	case "UserPromptSubmit":
+		c.ReadTranscript = true // catch up on the end of the previous turn
 		e.EventType = schema.PromptSubmit
 		e.Content = textContent(p.Prompt)
 	case "PreToolUse":
@@ -89,26 +103,31 @@ func FromClaudeCode(payload []byte, now time.Time, id Identity) ([]schema.Event,
 		e.DurationMS = p.DurationMS
 		e.Content = jsonContent(nil, p.ToolResponse)
 	case "Stop":
+		c.ReadTranscript = true
 		e.EventType = schema.TurnEnd
 		if p.LastAssistantMessage != "" {
+			c.Reply = p.LastAssistantMessage
 			reply := base
 			reply.EventType = schema.AssistantMessage
 			reply.Content = textContent(p.LastAssistantMessage)
 			end := e
 			end.EventID = schema.NewEventID(now)
-			return []schema.Event{reply, end}, nil
+			c.Events = []schema.Event{reply, end}
+			return c, nil
 		}
 	case "SubagentStop":
 		e.EventType = schema.SubagentEnd
 		e.TranscriptPath = p.AgentTranscriptPath
 		e.Content = textContent(p.LastAssistantMessage)
 	case "SessionEnd":
+		c.ReadTranscript = true
 		e.EventType = schema.SessionEnd
 		e.EndReason = p.Reason
 	default:
 		e.EventType = schema.HarnessOther
 	}
-	return []schema.Event{e}, nil
+	c.Events = []schema.Event{e}
+	return c, nil
 }
 
 func textContent(s string) *schema.Content {
