@@ -51,6 +51,11 @@ The sandbox also sets `AFR_CAPTURE_RAW=1`, which keeps every raw hook payload un
 The sandbox uses `.claude/settings.local.json`, so your global Claude Code settings are
 untouched. Raw captures contain full prompts and command output: keep them out of git.
 
+## Threat model
+
+What afr protects, who it guards against, and what it does not do:
+[docs/threat-model.md](docs/threat-model.md).
+
 ## Design rule: never interfere
 
 `afr hook` always exits 0 and never writes to stdout. On any error, including a panic, it
