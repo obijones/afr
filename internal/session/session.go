@@ -16,6 +16,7 @@ import (
 
 	"github.com/obijones/afr/internal/collect"
 	"github.com/obijones/afr/internal/platform"
+	"github.com/obijones/afr/internal/rules"
 	"github.com/obijones/afr/internal/schema"
 	"github.com/obijones/afr/internal/store"
 	"github.com/obijones/afr/internal/transcript"
@@ -42,6 +43,8 @@ type State struct {
 	PromptID       string `json:"prompt_id"` // current turn while scanning the transcript
 	Model          string `json:"model"`     // latest model seen in the transcript
 	Version        string `json:"version"`   // latest harness version seen in the transcript
+	Workspace      string `json:"workspace"` // first working directory seen: the project root for rules
+	Mode           string `json:"mode"`      // latest permission mode seen, for rules
 
 	HookToolIDs       []string `json:"hook_tool_ids"`       // tool calls hooks recorded, not yet seen in the transcript
 	HookPromptIDs     []string `json:"hook_prompt_ids"`     // prompts hooks recorded
@@ -56,6 +59,10 @@ type State struct {
 func statePath(dataDir, session string) string {
 	return strings.TrimSuffix(store.LogPath(dataDir, session), ".ndjson") + ".state.json"
 }
+
+// Warn receives problems that must not stop recording, such as a
+// highlight rule that failed. The hook sends them to afr's error log.
+var Warn = func(string) {}
 
 // Record writes one converted hook call. At catch-up points (prompt,
 // turn end, session end) it first reads new transcript lines and adds
@@ -118,11 +125,53 @@ func Record(dataDir string, c *collect.Converted) error {
 				events[i].AgentVersion = st.Version
 			}
 		}
-		if err := w.Append(append(recovered, events...)); err != nil {
+		all := append(recovered, events...)
+		st.highlight(all, dataDir)
+		if err := w.Append(all); err != nil {
 			return err
 		}
 		return save(statePath(dataDir, session), st)
 	})
+}
+
+// highlight runs the rules over events about to be written, so tool
+// calls recovered from the transcript are tagged like hooked ones. A rule
+// failure costs highlights, never the events.
+func (st *State) highlight(events []schema.Event, dataDir string) {
+	for _, e := range events {
+		if st.Workspace == "" && e.Cwd != "" {
+			st.Workspace = e.Cwd
+		}
+	}
+	ctx := Context(st.Workspace, dataDir)
+	ctx.Mode = st.Mode
+	for i := range events {
+		if !rules.Evaluates(events[i]) {
+			continue
+		}
+		hs, err := rules.Evaluate(events[i], &ctx)
+		if err != nil {
+			Warn("highlight rules: " + err.Error())
+			if hs == nil {
+				continue // the rules did not run: leave the event unstamped
+			}
+		}
+		events[i].Highlights = hs
+		events[i].RulesVersion = rules.Version
+	}
+	st.Mode = ctx.Mode
+}
+
+// Context builds the rules context for a session on this machine.
+func Context(workspace, dataDir string) rules.Context {
+	ctx := rules.Context{Workspace: workspace, DataDir: dataDir}
+	ctx.Home, _ = os.UserHomeDir()
+	for _, v := range []string{os.TempDir(), os.Getenv("TMPDIR"), os.Getenv("TEMP"), os.Getenv("TMP")} {
+		if v != "" && !slices.Contains(ctx.TempDirs, v) {
+			ctx.TempDirs = append(ctx.TempDirs, v)
+		}
+	}
+	return ctx
 }
 
 // recover turns transcript records into the events hooks did not supply.

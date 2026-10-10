@@ -70,16 +70,20 @@ type Event struct {
 	DurationMS *int64 `json:"duration_ms,omitempty"`
 	ToolError  bool   `json:"tool_error,omitempty"` // the tool call failed or was refused
 
-	Source         string  `json:"source,omitempty"`     // session.start: startup, resume, ...
-	EndReason      string  `json:"end_reason,omitempty"` // session.end
+	Source         string  `json:"source,omitempty"`          // session.start: startup, resume, ...
+	PermissionMode string  `json:"permission_mode,omitempty"` // session.start, prompt.submit: the harness permission mode
+	EndReason      string  `json:"end_reason,omitempty"`      // session.end
 	TranscriptPath string  `json:"transcript_path,omitempty"`
 	Notice         *Notice `json:"notice,omitempty"` // harness.notice
 
-	Content     *Content    `json:"content,omitempty"`
-	Highlights  []Highlight `json:"highlights,omitempty"`
-	ContentHash string      `json:"content_hash,omitempty"`
-	PrevHash    string      `json:"prev_hash"`
-	Hash        string      `json:"hash"`
+	Content    *Content    `json:"content,omitempty"`
+	Highlights []Highlight `json:"highlights,omitempty"`
+	// RulesVersion is the highlight rules version that evaluated this
+	// event at write time; empty means no rules ran (an older afr).
+	RulesVersion string `json:"rules_version,omitempty"`
+	ContentHash  string `json:"content_hash,omitempty"`
+	PrevHash     string `json:"prev_hash"`
+	Hash         string `json:"hash"`
 }
 
 // Content holds what was said or done, verbatim.
@@ -107,7 +111,8 @@ type Notice struct {
 // Highlight tags an event for reviewers. It never blocks anything.
 type Highlight struct {
 	RuleID   string `json:"rule_id"`
-	Severity string `json:"severity"`
+	Severity string `json:"severity"`         // high, medium, or low
+	Detail   string `json:"detail,omitempty"` // what matched; secrets are masked
 }
 
 // NewEventID returns a time-ordered unique id: 12 hex digits of Unix
