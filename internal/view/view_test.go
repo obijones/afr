@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/obijones/afr/internal/collect"
+	"github.com/obijones/afr/internal/rules"
 	"github.com/obijones/afr/internal/schema"
 	"github.com/obijones/afr/internal/session"
 	"github.com/obijones/afr/internal/store"
@@ -259,5 +261,53 @@ func TestRelativeTo(t *testing.T) {
 		if got := relativeTo(c.cwd, c.in); got != c.want {
 			t.Errorf("relativeTo(%q, %q) = %q, want %q", c.cwd, c.in, got, c.want)
 		}
+	}
+}
+
+func TestRescanMarksCurrentRuleHighlights(t *testing.T) {
+	events := synthetic()
+	for i := range events {
+		events[i].EventID = fmt.Sprintf("e%02d", i)
+	}
+	// A call recorded before the rules existed, and a secret in a result.
+	events = append(events,
+		schema.Event{Schema: schema.Version, EventID: "e90", Session: "abc123", Cwd: "/repo", TS: events[len(events)-1].TS,
+			EventType: schema.ToolCall, TurnID: "p1", Tool: "Bash", ToolCallID: "c9", Content: &schema.Content{Input: json.RawMessage(`{"command":"git push --force origin main"}`)}},
+		schema.Event{Schema: schema.Version, EventID: "e91", Session: "abc123", Cwd: "/repo", TS: events[len(events)-1].TS,
+			EventType: schema.ToolResult, TurnID: "p1", Tool: "Bash", ToolCallID: "c9", Content: &schema.Content{Output: json.RawMessage(`{"stdout":"AKIAIOSFODNN7EXAMPLE"}`)}},
+	)
+	cur := Rescan(events, "")
+	if hs := cur["e90"]; len(hs) != 1 || hs[0].RuleID != "git.history_rewrite" {
+		t.Fatalf("e90: %v", hs)
+	}
+	for id, hs := range cur {
+		for _, h := range hs {
+			if h.RuleID == "exec.download_pipe_shell" {
+				t.Errorf("%s: stored highlight repeated as current: %v", id, hs)
+			}
+		}
+	}
+
+	var b bytes.Buffer
+	if err := Replay(&b, events, "ok", Options{Loc: time.UTC, Current: cur, Full: true}); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	for _, want := range []string{
+		"marked * come from the current highlight rules",
+		"[MEDIUM git.history_rewrite*] [MEDIUM secrets.in_content*] Bash   git push --force",
+		"MEDIUM secrets.in_content*: AWS access key AKIA...MPLE",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("replay lacks %q:\n%s", want, out)
+		}
+	}
+
+	// Events this rules version already evaluated are not re-run.
+	for i := range events {
+		events[i].RulesVersion = rules.Version
+	}
+	if cur := Rescan(events, ""); len(cur) != 0 {
+		t.Fatalf("re-evaluated current-version events: %v", cur)
 	}
 }
