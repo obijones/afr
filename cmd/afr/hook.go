@@ -36,6 +36,8 @@ func runHook(stdin io.Reader) (code int) {
 		}
 	}()
 
+	session.Warn = logError
+
 	if os.Getenv("AFR_TEST_PANIC") == "1" {
 		panic("forced panic (AFR_TEST_PANIC=1)")
 	}
