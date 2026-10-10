@@ -16,6 +16,7 @@ commands:
   sessions  list recorded sessions, most recent first: afr sessions [-n N]
   replay    print one session as a conversation: afr replay [--full] <session-id or prefix>
   verify    check a session log's sequence numbers and hash chain: afr verify <session-id>
+  rules     list, check, and test highlight rules: afr rules <list | check | test>
   version   print the afr version
 `
 
@@ -40,6 +41,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runReplay(args[1:], stdout, stderr)
 	case "verify":
 		return runVerify(args[1:], stdout, stderr)
+	case "rules":
+		return runRules(args[1:], stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return 0

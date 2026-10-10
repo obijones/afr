@@ -96,6 +96,10 @@ type Context struct {
 	DataDir   string   // afr's data directory
 	TempDirs  []string // extra temp folders ($TMPDIR, %TEMP%)
 
+	// Custom holds customer rules and overrides of built-in rules; nil
+	// means built-in rules only.
+	Custom *Set
+
 	// Mode is the last permission mode seen in the session. Evaluate
 	// updates it, so the caller keeps it between events.
 	Mode string
@@ -129,18 +133,38 @@ func Evaluate(e schema.Event, ctx *Context) (hs []schema.Highlight, err error) {
 	if c == nil {
 		c = &Context{}
 	}
+	var in *input
 	if e.Content != nil {
 		switch e.EventType {
 		case schema.ToolCall:
-			in := parseInput(e.Tool, e.Content.Input, e.Cwd, c)
+			parsed := parseInput(e.Tool, e.Content.Input, e.Cwd, c)
+			in = &parsed
 			for _, r := range toolRules {
-				run(r.name, func() { r.f(in, c, set) })
+				run(r.name, func() { r.f(parsed, c, set) })
 			}
 			run("secrets", func() { secretsIn(string(e.Content.Input), set) })
 		case schema.ToolResult:
 			run("secrets", func() { secretsIn(string(e.Content.Output), set) })
 		case schema.PromptSubmit, schema.AssistantMessage, schema.SubagentEnd:
 			run("secrets", func() { secretsIn(e.Content.Text, set) })
+		}
+	}
+	if cs := c.Custom; cs != nil {
+		for id, h := range set {
+			if o, ok := cs.Overrides[id]; ok {
+				if o.Disabled {
+					delete(set, id)
+				} else {
+					h.Severity = o.Severity
+					set[id] = h
+				}
+			}
+		}
+		if e.Content != nil {
+			for i := range cs.Rules {
+				r := &cs.Rules[i]
+				run(r.ID, func() { r.evaluate(e, in, set) })
+			}
 		}
 	}
 	if len(errs) > 0 {
@@ -186,7 +210,17 @@ func (s highlightSet) list() []schema.Highlight {
 		if d := Rank(b.Severity) - Rank(a.Severity); d != 0 {
 			return d
 		}
-		return order[a.RuleID] - order[b.RuleID]
+		ia, oka := order[a.RuleID]
+		ib, okb := order[b.RuleID]
+		switch {
+		case !oka && !okb:
+			return strings.Compare(a.RuleID, b.RuleID)
+		case !oka:
+			return 1 // customer rules after built-ins of the same severity
+		case !okb:
+			return -1
+		}
+		return ia - ib
 	})
 	return out
 }
