@@ -35,6 +35,21 @@ func DataDir() (string, error) {
 	return filepath.Join(home, ".local", "share", "afr"), nil
 }
 
+// ManagedRulesDir is where an administrator puts customer highlight rules
+// for every user of the machine: %ProgramData%\afr\rules on Windows,
+// /etc/afr/rules elsewhere. It is not configurable by environment, so a
+// user cannot point afr away from it.
+func ManagedRulesDir() string {
+	if runtime.GOOS == "windows" {
+		d := os.Getenv("ProgramData")
+		if d == "" {
+			d = `C:\ProgramData`
+		}
+		return filepath.Join(d, "afr", "rules")
+	}
+	return "/etc/afr/rules"
+}
+
 // MkdirPrivate creates dir and its parents, readable only by the owner.
 // On Windows the mode bits are ignored; owner-only ACLs are a planned
 // addition (see the cross-platform table in the build plan).

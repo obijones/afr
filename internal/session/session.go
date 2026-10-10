@@ -40,11 +40,12 @@ const maxIDs = 2000
 type State struct {
 	TranscriptPath string `json:"transcript_path"`
 	Offset         int64  `json:"offset"`
-	PromptID       string `json:"prompt_id"` // current turn while scanning the transcript
-	Model          string `json:"model"`     // latest model seen in the transcript
-	Version        string `json:"version"`   // latest harness version seen in the transcript
-	Workspace      string `json:"workspace"` // first working directory seen: the project root for rules
-	Mode           string `json:"mode"`      // latest permission mode seen, for rules
+	PromptID       string `json:"prompt_id"`                // current turn while scanning the transcript
+	Model          string `json:"model"`                    // latest model seen in the transcript
+	Version        string `json:"version"`                  // latest harness version seen in the transcript
+	Workspace      string `json:"workspace"`                // first working directory seen: the project root for rules
+	Mode           string `json:"mode"`                     // latest permission mode seen, for rules
+	RulesProblems  string `json:"rules_problems,omitempty"` // hash of the last customer-rule problems logged
 
 	HookToolIDs       []string `json:"hook_tool_ids"`       // tool calls hooks recorded, not yet seen in the transcript
 	HookPromptIDs     []string `json:"hook_prompt_ids"`     // prompts hooks recorded
@@ -138,13 +139,32 @@ func Record(dataDir string, c *collect.Converted) error {
 // calls recovered from the transcript are tagged like hooked ones. A rule
 // failure costs highlights, never the events.
 func (st *State) highlight(events []schema.Event, dataDir string) {
+	any := false
 	for _, e := range events {
 		if st.Workspace == "" && e.Cwd != "" {
 			st.Workspace = e.Cwd
 		}
+		any = any || rules.Evaluates(e)
 	}
-	ctx := Context(st.Workspace, dataDir)
+	if !any {
+		return // nothing to evaluate: skip loading customer rules
+	}
+	ctx, problems := Context(st.Workspace, dataDir)
 	ctx.Mode = st.Mode
+	// Report customer-rule problems once per change, not on every call.
+	if len(problems) > 0 {
+		var msgs []string
+		for _, p := range problems {
+			msgs = append(msgs, p.Error())
+		}
+		joined := strings.Join(msgs, "; ")
+		if h := hash(joined)[:16]; h != st.RulesProblems {
+			Warn("customer rules: " + joined)
+			st.RulesProblems = h
+		}
+	} else {
+		st.RulesProblems = ""
+	}
 	for i := range events {
 		if !rules.Evaluates(events[i]) {
 			continue
@@ -157,21 +177,24 @@ func (st *State) highlight(events []schema.Event, dataDir string) {
 			}
 		}
 		events[i].Highlights = hs
-		events[i].RulesVersion = rules.Version
+		events[i].RulesVersion = ctx.Custom.Version()
 	}
 	st.Mode = ctx.Mode
 }
 
-// Context builds the rules context for a session on this machine.
-func Context(workspace, dataDir string) rules.Context {
+// Context builds the rules context for a session on this machine,
+// including any customer rules, and reports problems loading them.
+func Context(workspace, dataDir string) (rules.Context, []error) {
 	ctx := rules.Context{Workspace: workspace, DataDir: dataDir}
+	var problems []error
+	ctx.Custom, problems = rules.LoadDirs(rules.Dirs(dataDir)...)
 	ctx.Home, _ = os.UserHomeDir()
 	for _, v := range []string{os.TempDir(), os.Getenv("TMPDIR"), os.Getenv("TEMP"), os.Getenv("TMP")} {
 		if v != "" && !slices.Contains(ctx.TempDirs, v) {
 			ctx.TempDirs = append(ctx.TempDirs, v)
 		}
 	}
-	return ctx
+	return ctx, problems
 }
 
 // recover turns transcript records into the events hooks did not supply.

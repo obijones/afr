@@ -18,6 +18,8 @@ import (
 // events whose content was purged (they cannot be re-evaluated).
 func Rescan(events []schema.Event, dataDir string) map[string][]schema.Highlight {
 	ctx := rules.Context{DataDir: dataDir}
+	ctx.Custom, _ = rules.LoadDirs(rules.Dirs(dataDir)...)
+	version := ctx.Custom.Version()
 	for _, e := range InTimeOrder(events) {
 		if e.Cwd != "" {
 			ctx.Workspace = e.Cwd
@@ -31,7 +33,7 @@ func Rescan(events []schema.Event, dataDir string) map[string][]schema.Highlight
 		if !rules.Evaluates(e) || e.EventID == "" {
 			continue
 		}
-		if e.RulesVersion == rules.Version || (e.Content == nil && e.ContentHash != "") {
+		if e.RulesVersion == version || (e.Content == nil && e.ContentHash != "") {
 			if e.PermissionMode != "" {
 				ctx.Mode = e.PermissionMode
 			}
