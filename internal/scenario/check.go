@@ -30,11 +30,13 @@ type ToolCall struct {
 	Subagent bool   `json:"subagent,omitempty"` // must come from a subagent
 }
 
-// Highlight expects a rule to tag the tool call whose input contains On.
-// Not required means pending: reported, never a failure.
+// Highlight expects a rule to tag the tool call whose input contains On,
+// at Severity if set. Not required means pending: reported, never a
+// failure.
 type Highlight struct {
 	RuleID   string `json:"rule_id"`
 	On       string `json:"on"`
+	Severity string `json:"severity,omitempty"`
 	Required bool   `json:"required"`
 }
 
@@ -135,17 +137,34 @@ func Check(x Expect, events []schema.Event, integrityOK bool, attempted []string
 		}
 	}
 
+	results := map[string]schema.Event{}
+	for _, e := range events {
+		if e.EventType == schema.ToolResult && e.ToolCallID != "" {
+			results[e.ToolCallID] = e
+		}
+	}
 	for _, h := range x.Highlights {
 		// The model may wrap or repeat a command, so any matching call
 		// carrying the rule counts.
 		calls := findCalls(events, ToolCall{Contains: h.On})
 		tagged := false
+		var seen []string
 		for _, c := range calls {
-			for _, got := range c.Highlights {
-				tagged = tagged || got.RuleID == h.RuleID
+			hs := append([]schema.Highlight(nil), c.Highlights...)
+			if res, ok := results[c.ToolCallID]; ok {
+				hs = append(hs, res.Highlights...) // a secret seen in the output
+			}
+			for _, got := range hs {
+				if got.RuleID == h.RuleID {
+					seen = append(seen, got.Severity)
+					tagged = tagged || h.Severity == "" || got.Severity == h.Severity
+				}
 			}
 		}
 		desc := fmt.Sprintf("highlight %s on %q", h.RuleID, h.On)
+		if h.Severity != "" {
+			desc = fmt.Sprintf("highlight %s %s on %q", h.Severity, h.RuleID, h.On)
+		}
 		target := fmt.Sprintf("%d matching calls", len(calls))
 		switch len(calls) {
 		case 0:
@@ -153,9 +172,14 @@ func Check(x Expect, events []schema.Event, integrityOK bool, attempted []string
 		case 1:
 			target = "1 matching call"
 		}
+		if len(seen) > 0 && !tagged {
+			target += ", tagged " + strings.Join(seen, ", ") + " instead"
+		}
 		switch {
 		case tagged:
 			out = append(out, Result{"PASS", desc})
+		case len(calls) == 0 && attempted != nil && !anyContains(attempted, h.On):
+			out = append(out, Result{"SKIPPED", desc + " (the model did not attempt it)"})
 		case !h.Required:
 			out = append(out, Result{"PENDING", desc + " (rule not required yet; " + target + ")"})
 		default:

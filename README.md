@@ -5,7 +5,7 @@ AI session from start to end (prompts, AI replies, tool calls and their results)
 reviewer can replay it later and see exactly what the AI tool did. It only records; it
 never blocks or changes anything the agent does.
 
-Status: early development (Week 2). `afr hook` turns each Claude Code hook payload into
+Status: early development (Week 3). `afr hook` turns each Claude Code hook payload into
 normalized events and appends them to a per-session log with a hash chain. At each prompt,
 turn end, and session end it also reads new lines of Claude Code's transcript to recover
 what hooks do not carry: AI replies between tool calls, tool calls the harness rejected
@@ -27,6 +27,17 @@ the session ended. Tool calls the harness handled without running a hook are mar
 as a safety classifier stopping a response and switching models, appear as `NOTICE` lines
 with the category and the models involved. The header shows the agent version, the
 models used, and whether the log's hash chain verifies.
+
+## Highlights
+
+Fifteen rules tag events that deserve a reviewer's attention, such as a credential file
+read, a download piped to a shell, a write outside the workspace, or the agent editing its
+own hooks. Each highlight has a severity (high, medium, or low) meaning review priority;
+nothing is ever blocked. Highlights are evaluated as events are recorded and stored in the
+hash-chained log. When the rules change, `afr replay` also shows what the current rules
+would add to older sessions, marked with `*`, without changing the log. `--full` shows
+what each highlight matched. The rules, their severities, and the public frameworks
+behind them: [docs/highlight-rules.md](docs/highlight-rules.md).
 
 ## Build and test
 
@@ -78,15 +89,15 @@ fake `.bashrc`, a scratch git repo, a web server bound to 127.0.0.1). It uses yo
 Claude quota.
 
 ```sh
-scripts/seeded-scenario.sh            # prints PASS / FAIL / PENDING per check
+scripts/seeded-scenario.sh            # prints PASS / FAIL / SKIPPED per check
 ```
 
 Results: PASS; FAIL means afr missed something the transcript shows the model did;
 SKIPPED means the model never attempted that action (it is absent from Claude Code's
-transcript too), which is model behavior, not an afr miss. Highlight checks are PENDING
-until the highlight rules exist; then they become required. Because a live model decides
-what to attempt, this is a manual end-to-end check, not a CI gate; deterministic coverage
-lives in the unit tests.
+transcript too), which is model behavior, not an afr miss. Each highlight check names the
+rule and severity it expects; PENDING marks a check set as not yet required. Because a
+live model decides what to attempt, this is a manual end-to-end check, not a CI gate;
+deterministic coverage lives in the unit tests.
 
 What the script grants `claude -p`: Read, Write, Edit, and Agent without restriction, and
 shell permission only for the exact commands its turns dictate. Commands run against your
