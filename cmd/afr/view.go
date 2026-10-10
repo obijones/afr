@@ -69,7 +69,8 @@ func runReplay(args []string, stdout, stderr io.Writer) int {
 	} else if len(probs) > 0 {
 		integrity = fmt.Sprintf("%d problems, run afr verify", len(probs))
 	}
-	if err := view.Replay(stdout, events, integrity, view.Options{Full: *full, Width: *width}); err != nil {
+	o := view.Options{Full: *full, Width: *width, Current: view.Rescan(events, dataDir)}
+	if err := view.Replay(stdout, events, integrity, o); err != nil {
 		fmt.Fprintln(stderr, "afr:", err)
 		return 1
 	}

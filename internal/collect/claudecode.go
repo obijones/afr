@@ -24,6 +24,7 @@ type claudePayload struct {
 	Cwd                  string          `json:"cwd"`
 	Source               string          `json:"source"`
 	Reason               string          `json:"reason"`
+	PermissionMode       string          `json:"permission_mode"`
 	Prompt               string          `json:"prompt"`
 	ToolName             string          `json:"tool_name"`
 	ToolUseID            string          `json:"tool_use_id"`
@@ -88,10 +89,12 @@ func FromClaudeCode(payload []byte, now time.Time, id Identity) (*Converted, err
 	case "SessionStart":
 		e.EventType = schema.SessionStart
 		e.Source = p.Source
+		e.PermissionMode = p.PermissionMode
 		e.TranscriptPath = p.TranscriptPath
 	case "UserPromptSubmit":
 		c.ReadTranscript = true // catch up on the end of the previous turn
 		e.EventType = schema.PromptSubmit
+		e.PermissionMode = p.PermissionMode
 		e.Content = textContent(p.Prompt)
 	case "PreToolUse":
 		e.EventType = schema.ToolCall

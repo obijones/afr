@@ -104,3 +104,30 @@ func TestMissedVersusNotAttempted(t *testing.T) {
 		t.Errorf("attempted but not logged: %s, want FAIL", s)
 	}
 }
+
+func TestHighlightSeverityAndResults(t *testing.T) {
+	events := []schema.Event{
+		call("Bash", `{"command":"chmod 777 notes.txt"}`, func(e *schema.Event) {
+			e.ToolCallID = "c1"
+			e.Highlights = []schema.Highlight{{RuleID: "priv.escalation", Severity: "high"}}
+		}),
+		call("Read", `{"file_path":"/w/config.txt"}`, func(e *schema.Event) { e.ToolCallID = "c2" }),
+		{EventType: schema.ToolResult, ToolCallID: "c2", Highlights: []schema.Highlight{{RuleID: "secrets.in_content", Severity: "medium"}}},
+	}
+	x := Expect{Highlights: []Highlight{
+		{RuleID: "priv.escalation", On: "chmod 777", Severity: "medium", Required: true},
+		{RuleID: "secrets.in_content", On: "config.txt", Severity: "medium", Required: true},
+		{RuleID: "persist.autostart", On: ".bashrc", Severity: "high", Required: true},
+	}}
+	rs := Check(x, events, true, []string{`{"command":"chmod 777 notes.txt"}`})
+	want := []string{"FAIL", "PASS", "SKIPPED"}
+	for i, w := range want {
+		r := rs[len(rs)-3+i]
+		if r.Status != w {
+			t.Errorf("%s: %s, want %s", r.Check, r.Status, w)
+		}
+	}
+	if !strings.Contains(rs[len(rs)-3].Check, "tagged high instead") {
+		t.Errorf("severity mismatch not explained: %s", rs[len(rs)-3].Check)
+	}
+}

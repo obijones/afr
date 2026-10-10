@@ -16,6 +16,10 @@ type Options struct {
 	Full  bool           // print complete text, inputs, and outputs under each line
 	Width int            // cut summary lines to this many characters (0 = 110)
 	Loc   *time.Location // time zone for timestamps (nil = local)
+
+	// Current holds highlights today's rules give that the log does not
+	// have, by event id (see Rescan). They are marked with * in the replay.
+	Current map[string][]schema.Highlight
 }
 
 // Replay prints one session as a conversation, start to end, in the
@@ -56,9 +60,14 @@ func Replay(w io.Writer, events []schema.Event, integrity string, o Options) err
 		agent += " " + strings.Join(sum.Versions, " -> ")
 	}
 	fmt.Fprintf(w, "SESSION %s  %s@%s  %s  %s  model: %s\n", sum.Session, sum.User, sum.Host, sum.Cwd, agent, models)
-	fmt.Fprintf(w, "%s  %s, %s, %s, %s  integrity: %s\n\n", start.Format("2006-01-02 MST"),
+	fmt.Fprintf(w, "%s  %s, %s, %s, %s  integrity: %s\n", start.Format("2006-01-02 MST"),
 		plural(sum.Turns, "turn"), plural(sum.ToolCalls, "tool call"), plural(sum.Highlight, "highlight"),
 		plural(sum.Notices, "harness notice"), integrity)
+	if n := countHighlights(o.Current); n > 0 {
+		fmt.Fprintf(w, "%s marked * come from the current highlight rules, not from when the session was recorded\n",
+			plural(n, "highlight"))
+	}
+	fmt.Fprintln(w)
 
 	calls := map[string]bool{}
 	for _, e := range evs {
@@ -93,7 +102,7 @@ func (r *replayer) prefixFor(e schema.Event, kind string) string {
 	}
 	p := fmt.Sprintf("%s  %-9s %-3s ", e.TS.In(r.o.Loc).Format("15:04:05"), kind, turn)
 	// Highlights go first, so a long line can never cut them off.
-	for _, h := range e.Highlights {
+	for _, h := range r.highlights(e) {
 		p += "[" + strings.ToUpper(h.Severity) + " " + h.RuleID + "] "
 	}
 	if e.AgentType != "" {
@@ -102,12 +111,37 @@ func (r *replayer) prefixFor(e schema.Event, kind string) string {
 	return p
 }
 
+// highlights merges what a line shows: the event's stored highlights, a
+// tool call's result highlights, and current-rule additions (marked *),
+// highest severity first, one per rule.
+func (r *replayer) highlights(e schema.Event) []schema.Highlight {
+	stored := append([]schema.Highlight(nil), e.Highlights...)
+	extra := append([]schema.Highlight(nil), r.o.Current[e.EventID]...)
+	if e.EventType == schema.ToolCall {
+		if res, ok := r.results[e.ToolCallID]; ok {
+			stored = append(stored, res.Highlights...)
+			extra = append(extra, r.o.Current[res.EventID]...)
+		}
+	}
+	for i := range extra {
+		extra[i].RuleID += "*"
+	}
+	return rankHighlights(append(stored, extra...))
+}
+
 func (r *replayer) line(e schema.Event, kind, text string) {
 	s := neutralize(r.prefixFor(e, kind)+text, false)
 	if len(s) > r.o.Width {
 		s = cut(s, r.o.Width-3) + "..."
 	}
 	r.write(s + "\n")
+	var why []string
+	for _, h := range r.highlights(e) {
+		if h.Detail != "" {
+			why = append(why, strings.ToUpper(h.Severity)+" "+h.RuleID+": "+h.Detail)
+		}
+	}
+	r.detail("highlights", strings.Join(why, "\n"))
 }
 
 // detail prints a full value under its line, indented, in --full mode.
