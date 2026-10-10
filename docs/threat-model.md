@@ -1,6 +1,6 @@
 # afr threat model (v0.1 draft)
 
-_Status: draft, 2026-10-09. Covers afr v0.1: Claude Code on Linux and Windows, local logs only._
+_Status: draft, updated 2026-10-10. Covers afr v0.1: Claude Code on Linux and Windows, local logs only._
 
 afr is a **recorder, not a control**. It writes a complete, verifiable log of each AI agent
 session so a reviewer can see what the agent was asked, what it said, and what it ran. It
@@ -39,6 +39,9 @@ because the harness runs them, on a machine the user controls.
 | Privilege or permission bypass (`sudo`, `chmod 777`, skip-permissions flags) | Logged | Detection only | `priv.escalation`, `agent.permission_bypass` |
 | Agent edits its own hooks or afr data (`.claude/settings*`, `.github/hooks`, `~/.copilot`, afr data dir) | Logged | Prevention needs managed settings | `agent.monitoring_tamper` |
 | Secret-shaped strings in commands or output | Kept verbatim (no redaction) | Optional redaction setting | `secrets.in_content` |
+| Agent dumps all environment variables (`env`, `printenv`, `/proc/*/environ`) | Logged, output included | Detection only; the dump makes the log itself sensitive | `secrets.env_dump` |
+| Reverse shell or tunnel (`/dev/tcp`, `nc -e`, ngrok, `ssh -R`) | Logged | No network truth (OS or proxy controls) | `net.reverse_shell_or_tunnel` |
+| Package installed from a URL, git repo, or custom index | Logged | Detection only | `exec.install_from_url` |
 | Harness handled a call with no hook, or refused it | Recovered from the transcript, marked `(no hook ran)` and `tool_error` | Transcript is the only source | Structural: shown in replay |
 | User removes hooks | Missing sessions are visible against Claude Code transcripts; open or cut-off sessions shown | Managed settings; central shipping (Phase 5) | Structural: digest flags gaps |
 | User or process edits or deletes the log | Per-session hash chain over metadata and `content_hash`; `afr verify` | Not tamper-proof: an owner can rewrite the whole chain. Signing and central store later | Structural: `afr verify` |
@@ -69,4 +72,6 @@ because the harness runs them, on a machine the user controls.
 - Logs are unredacted by design: a stolen log is a stolen conversation, including secrets.
 - Interactive sessions and Windows are unobserved; both may change what is captured.
 - Highlight rules match command text, so obfuscated commands can evade them. Rules aid
-  review; they are not detection guarantees.
+  review; they are not detection guarantees. Rules, severities (high, medium, low), and
+  their framework grounding: [highlight-rules.md](highlight-rules.md).
+- Rules see content after the 64 KB cap, so a secret past the cap is not flagged.
