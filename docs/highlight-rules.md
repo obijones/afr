@@ -88,7 +88,68 @@ reading `known_hosts` or public keys, and writes to caches and package stores.
   recorded content (the highlight detail is masked). Encryption at rest or optional
   redaction is on the roadmap.
 
-## Changing rules
+## Customer rules
+
+Organizations add their own rules, and tune the built-in ones, with YAML files. afr reads
+them on each hook call and runs them through the same engine as the built-in rules, so
+customer highlights are stored at write time, hash-chained, shown in replay, and covered
+by the replay's `*` diff. A full example: [examples/custom-rules.yaml](examples/custom-rules.yaml).
+
+```yaml
+rules:
+  - id: acme.prod_db_access          # org.rule_name; built-in ids are reserved
+    title: Command touches the production database
+    severity: high                   # high, medium, or low
+    match:
+      command: '(?i)\bpsql\b.*prod-db\.acme\.internal'
+overrides:
+  fs.write_outside_workspace: {severity: low}
+  secrets.env_dump: {disabled: true}
+```
+
+**Match fields.** Each takes one pattern or a list (any may match); every field given must
+match.
+
+| Field | Matches | Pattern type |
+| --- | --- | --- |
+| `tool` | Tool name, such as `Bash`, `PowerShell`, `Write` | Regular expression |
+| `command` | Shell command text (any tool with a command) | Regular expression |
+| `read_path` | Files read by Read, Grep, Glob | Glob |
+| `write_path` | Files written by file tools or shell commands (redirects, `tee`, `cp`, ...) | Glob |
+| `content` | Tool input and output, prompts, and replies | Regular expression |
+
+Regular expressions use Go's RE2 syntax, which runs in linear time, so a pattern cannot
+hang a hook call. In globs, `*` and `?` stay within one folder and `**` crosses folders;
+a glob without a leading `/` or drive matches at any depth, and `~/` matches any home
+folder. Paths compare with forward slashes and ignore case.
+
+**Where files go.**
+
+| Folder | Who controls it |
+| --- | --- |
+| `%ProgramData%\afr\rules` (Windows), `/etc/afr/rules` (Linux) | Administrators, pushed with GPO or MDM; applies to every user |
+| `<afr data dir>/rules` | The user, for personal use |
+
+If the managed folder holds any rule file, the personal folder is ignored, so users cannot
+loosen an organization's rules. The managed location is fixed, not set by environment.
+
+**Tooling.**
+
+```sh
+afr rules check [file ...]     # validate; lists every problem, exits 1 if any
+afr rules test --file r.yaml 'psql -h prod-db.acme.internal'   # what would be flagged
+afr rules test --read /data/customers/eu/list.csv
+afr rules list                 # every active rule, its severity, and its source
+```
+
+**Safety.** A bad rule or file is skipped and reported; the rest still load and recording
+never stops. Problems go to `afr-errors.log` once per change, not on every call. A
+misspelled field is an error rather than a silently ignored rule. Limits: 32 files,
+256 KB per file, 500 rules. Each customer rule set changes the stamped rules version
+(for example `1+e580cfcd`, a hash of the files), so a reviewer can see which rules
+evaluated an event. Fifty customer rules measured about 3 to 7 ms extra per hook call.
+
+## Changing built-in rules
 
 Patterns compile on first use inside the hook's recovered path, and each rule runs under
 its own recover, so a bad rule costs highlights, never the event. A unit test compiles
