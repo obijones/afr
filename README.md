@@ -111,8 +111,19 @@ exits with status 2.
 
 ## Data layout
 
-Data directory: `$AFR_HOME`, else `~/.local/share/afr` on Linux, `%LOCALAPPDATA%\afr` on
-Windows. All files are owner-only.
+Data directory: `$AFR_HOME`, else `$XDG_DATA_HOME/afr` or `~/.local/share/afr` on Linux,
+and `%LOCALAPPDATA%\afr` on Windows.
+
+Permissions differ by platform:
+
+- Linux: files are created owner-only (mode 600) and directories mode 700.
+- Windows: afr does not set ACLs yet, so files inherit the permissions of the folder they are
+  in. Under the default `%LOCALAPPDATA%\afr` that normally means only you, SYSTEM, and
+  Administrators. If `AFR_HOME` points outside your user profile (for example `C:\afr-data`),
+  other local users may be able to read the logs, so keep it under your profile. Owner-only
+  ACLs are planned.
+
+Inside the data directory:
 
 - `sessions/<session-id>.ndjson`: one event per line (schema in `internal/schema`), each
   with `seq`, `prev_hash`, and `hash`. The hash covers `content_hash` instead of the
