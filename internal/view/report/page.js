@@ -172,6 +172,8 @@
 
   // ---- triage ----
   function reveal(s, j) {
+    // A triage click shows its line whatever the current search hides.
+    if (active()) { q.value = ""; sev.value = ""; run(); }
     s.parents.forEach(function (p) { p.setOpen(true); });
     s.node.setOpen(true);
     var e = s.lineEls && s.lineEls[j];

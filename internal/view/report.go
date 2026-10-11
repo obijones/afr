@@ -98,8 +98,8 @@ type reportDetail struct {
 	Body  string `json:"body"`
 }
 
-// Report writes one HTML page covering the given sessions. Captured text
-// is neutralized as in the terminal replay, and secrets are masked in
+// Report writes one HTML page covering the given sessions. Every captured
+// value is neutralized as in the terminal replay, and secrets are masked in
 // summary lines; full values under each line are kept, since the reviewer
 // needs them.
 func Report(w io.Writer, sessions []ReportSession, o ReportOptions) error {
@@ -123,14 +123,21 @@ func Report(w io.Writer, sessions []ReportSession, o ReportOptions) error {
 		if len(sum.Versions) > 0 {
 			agent += " " + strings.Join(sum.Versions, " -> ")
 		}
+		// Every captured value is neutralized, session fields included:
+		// a folder name or end reason can carry control characters too.
+		n := func(v string) string { return neutralize(v, false) }
+		models := make([]string, len(sum.Models))
+		for i, v := range sum.Models {
+			models[i] = n(v)
+		}
 		rs := reportSession{
-			ID: sum.Session, User: sum.User, Host: sum.Host, Cwd: sum.Cwd, Agent: agent, Models: sum.Models,
+			ID: n(sum.Session), User: n(sum.User), Host: n(sum.Host), Cwd: n(sum.Cwd), Agent: n(agent), Models: models,
 			Date:   sum.Started.In(o.Loc).Format("2006-01-02"),
 			Start:  sum.Started.In(o.Loc).Format("15:04:05"),
 			Last:   sum.LastSeen.In(o.Loc).Format("2006-01-02 15:04:05"),
-			Status: sum.Status, Open: sum.Status == "open",
+			Status: n(sum.Status), Open: sum.Status == "open",
 			Turns: sum.Turns, Tools: sum.ToolCalls, Notices: sum.Notices,
-			Integrity: s.Integrity, IntegrityOK: s.OK, Current: m.CurrentCount,
+			Integrity: n(s.Integrity), IntegrityOK: s.OK, Current: m.CurrentCount,
 		}
 		for _, l := range m.Lines {
 			rl := reportLine{
