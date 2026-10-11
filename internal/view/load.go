@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,8 +27,13 @@ func Load(path string) ([]schema.Event, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return Parse(f)
+}
+
+// Parse reads session log events from r, as Load does.
+func Parse(r io.Reader) ([]schema.Event, error) {
 	var out []schema.Event
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for sc.Scan() {
 		var e schema.Event
