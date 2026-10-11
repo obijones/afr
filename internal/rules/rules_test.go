@@ -300,3 +300,11 @@ func TestEvaluateSkipsOtherEvents(t *testing.T) {
 		t.Fatalf("got %v, %v", hs, err)
 	}
 }
+
+func TestMaskSecrets(t *testing.T) {
+	got := MaskSecrets("token ghp_abcdefghijklmnopqrstuvwxyz0123456789 and AKIAIOSFODNN7EXAMPLE -----BEGIN OPENSSH PRIVATE KEY----- ok")
+	want := "token ghp_...6789 and AKIA...MPLE [private key] ok"
+	if got != want {
+		t.Errorf("MaskSecrets = %q, want %q", got, want)
+	}
+}

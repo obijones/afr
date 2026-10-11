@@ -20,6 +20,7 @@ afr replay --full 3394       # with complete prompts, replies, tool inputs, and 
 afr replay -o s.txt 3394     # write it to a file (UTF-8), for sharing or review
 afr export 3394 a6ac         # zip sessions to review on another machine
 afr export --last 2          # zip the two most recently active sessions
+afr report --since 7d        # one HTML page to review many sessions
 ```
 
 A replay reads top to bottom in the order things happened: where the session began, each
@@ -47,6 +48,23 @@ layout, so after unzipping, `AFR_HOME=<folder> afr replay <id>` works on any mac
 Each log is read under its session lock, so exporting a live session is safe, but afr
 warns that the record is incomplete until the session ends. The zip holds full prompts and
 tool output: share it only with people allowed to see them.
+
+### Report
+
+`afr report` writes one offline HTML page (default `afr-report-<time>.html`, or `-o
+FILE.html`) for reviewing many sessions: a triage list on top (sessions that are still
+open, fail verification, or had denials or harness notices, then every highlight by
+severity, each linked to its line), then sessions grouped by date and user. Each session
+shows the same lines as `afr replay`, from the same code, with full prompts, inputs, and
+output one click down. A search box and a severity filter work across all sessions.
+Select sessions with `--since 7d`, `--since 36h`, `--since 2026-10-01`, or session ids.
+
+The page loads nothing from the network, and its Content-Security-Policy allows only its
+own inline style and script. Captured text is embedded once as escaped JSON and drawn as
+text, never as HTML, so a prompt or tool output cannot inject markup. Secrets are masked
+in the one-line summaries; the full values under each line are not. The file is written
+owner-only and holds full prompts and tool output: share it only with people allowed to
+see them.
 
 ## Highlights
 
