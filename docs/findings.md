@@ -3,6 +3,80 @@
 Behavior of AI agents and harnesses that afr testing revealed, with evidence and what it
 means for afr. Newest first.
 
+## F-004: Auto mode denials leave a tool call with no result in the hooks (2026-10-10)
+
+**What we saw.** In the first native Windows session (Claude Code 2.1.296, interactive CLI,
+`permission_mode: "auto"`), two PowerShell calls looking for `csc.exe` got a `PreToolUse`
+hook and nothing after it. afr's replay shows them as "no result (refused, interrupted, or
+failed)". The AI then said the commands were "blocked by the auto-mode classifier".
+
+**Explanation from the documentation.** `PostToolUse` "Runs immediately after a tool
+completes successfully", so a denied call never fires it. Claude Code has a separate
+`PermissionDenied` hook that "Runs when auto mode denies a tool call" and only in auto
+mode ([hooks](https://code.claude.com/docs/en/hooks.md)). afr's suggested hook config did not
+register it.
+
+**What it means for afr.** Gap: register `PermissionDenied` (and `PostToolUseFailure`) and
+record the denial as the call's result, so the replay says "denied by auto mode" instead of
+guessing. The transcript also holds the denial, but afr only recovers results for calls no
+hook saw.
+
+## F-003: Claude Code's own background agents fire SubagentStop, and suggested prompts become user prompts (2026-10-10)
+
+**What we saw.** Same Windows session. After every turn a `SubagentStop` arrived with an
+empty `agent_type`, no `Agent` tool call before it, and a one-line message: "add a README to
+each folder", "yes, add a top-level README", "initialize a git repo with a .gitignore for
+binaries", and once "Didn't produce a suggestion: the next step touches building/running an
+executable...". The next user prompts in turns 2 and 3 were exactly those texts. Three
+minutes after the last turn, one more `SubagentStop` carried a recap: "You're building the
+multi-folder afr-test project; folders, per-folder READMEs, and a top-level README are
+done...". afr's replay showed all of these as `SUBAGENT finished: ...`, as if a subagent had
+done that work.
+
+**Explanation from the documentation.**
+
+- Prompt suggestions are generated "with a short background request to the same model your
+  session is using", and "SubagentStop fires when one of those finishes too", with
+  `agent_type` empty when the session runs without a named agent
+  ([hooks](https://code.claude.com/docs/en/hooks.md),
+  [prompt suggestions](https://code.claude.com/docs/en/interactive-mode#prompt-suggestions)).
+  The user accepts one with Tab or Right arrow, then Enter.
+- The recap matches the session recap feature, generated "once at least three minutes have
+  passed since the last completed turn and the terminal is unfocused"
+  ([session recap](https://code.claude.com/docs/en/interactive-mode#session-recap)). The docs
+  do not say that it fires `SubagentStop`; this capture shows that it does.
+- Both can be turned off: `promptSuggestionEnabled: false`, `awaySummaryEnabled: false`.
+
+**Inference, not verified.** Turns 2 and 3 were accepted suggestions: the prompt text the
+model suggested, submitted by the user. The docs do not say whether an accepted suggestion
+is marked in hook payloads or the transcript.
+
+**What it means for afr.**
+
+1. Gap: label harness background agents (empty `agent_type`, no matching `Agent` call) as
+   such, not as subagent work, and say what they produced (a suggested prompt, a recap).
+2. For attribution, mark a prompt whose text equals the suggestion just made: the words
+   came from the model, the decision to send them from the user.
+
+## F-002: Opus 5.5's classifier switched an interactive session to Opus 4.8 over a calc.exe launcher (2026-10-10)
+
+**What we saw.** Same Windows session, on `claude-opus-5-5`. Turn 4 asked for "an example
+windows binary that when executed opens calc.exe", the classic harmless demo. afr recorded a
+notice ("Opus 5.5's safeguards stopped the response above"), the harness-injected companion
+message, and a `model_refusal_fallback` warning: category `cyber`, `claude-opus-5-5 ->
+claude-opus-4-8` for the session. Opus 4.8 answered and wrote the C# source and a build
+script; the replay header reads `model: claude-opus-5-5, claude-opus-4-8`.
+
+**Explanation.** The same mechanism as F-001: classifier refusal, then fallback for the rest
+of the session when `switchModelsOnFlag` is on. The notice text itself says Opus 5.5's
+safeguards "can sometimes flag non-cybersecurity work".
+
+**What it means for afr.** The notice capture built after F-001 worked on Windows unchanged.
+F-001's open question about interactive sessions gets part of an answer: in an interactive
+session the switch was announced once "for the session" and later replies came from Opus
+4.8. The session had only one turn after the switch, so persistence over many turns is still
+unverified.
+
 ## F-001: Sonnet 5.5 safety classifier switched the session to Sonnet 5 (2026-10-09)
 
 **What we saw.** In a seeded-scenario run requested on `claude-sonnet-5-5` (Claude Code
