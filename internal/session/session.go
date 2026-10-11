@@ -58,7 +58,7 @@ type State struct {
 }
 
 func statePath(dataDir, session string) string {
-	return strings.TrimSuffix(store.LogPath(dataDir, session), ".ndjson") + ".state.json"
+	return store.StatePath(store.LogPath(dataDir, session))
 }
 
 // Warn receives problems that must not stop recording, such as a
