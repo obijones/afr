@@ -6,11 +6,12 @@ import (
 
 	"github.com/obijones/afr/internal/platform"
 	"github.com/obijones/afr/internal/store"
+	"github.com/obijones/afr/internal/view"
 )
 
 func runVerify(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
-		fmt.Fprintln(stderr, "usage: afr verify <session-id>")
+		fmt.Fprintln(stderr, "usage: afr verify <session-id or unique prefix>")
 		return 1
 	}
 	dataDir, err := platform.DataDir()
@@ -18,7 +19,11 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "afr:", err)
 		return 1
 	}
-	path := store.LogPath(dataDir, args[0])
+	path, err := view.Resolve(dataDir, args[0])
+	if err != nil {
+		fmt.Fprintln(stderr, "afr:", err)
+		return 1
+	}
 	probs, err := store.Verify(path)
 	if err != nil {
 		fmt.Fprintln(stderr, "afr:", err)
