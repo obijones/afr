@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/obijones/afr/internal/collect"
+	"github.com/obijones/afr/internal/rules"
 	"github.com/obijones/afr/internal/schema"
 	"github.com/obijones/afr/internal/store"
 	"github.com/obijones/afr/internal/transcript"
@@ -383,5 +384,48 @@ func TestHighlightsAtWriteTime(t *testing.T) {
 	}
 	if probs, err := store.Verify(store.LogPath(dir, sid)); err != nil || len(probs) > 0 {
 		t.Fatalf("verify: %v %v", probs, err)
+	}
+}
+
+func TestCustomRulesAtWriteTime(t *testing.T) {
+	dir := t.TempDir()
+	rules.ManagedDir = filepath.Join(dir, "no-managed-rules")
+	if err := os.MkdirAll(filepath.Join(dir, "rules"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ruleFile := filepath.Join(dir, "rules", "acme.yaml")
+	if err := os.WriteFile(ruleFile, []byte("rules:\n  - id: acme.deploy\n    severity: high\n    match: {command: 'deploy\\.sh'}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var warnings []string
+	Warn = func(s string) { warnings = append(warnings, s) }
+	defer func() { Warn = func(string) {} }()
+
+	record := func(id, cmd string) {
+		c := hook("", schema.ToolCall, "p1", id, "", false)
+		c.Events[0].Tool = "Bash"
+		c.Events[0].Content = &schema.Content{Input: json.RawMessage(`{"command":"` + cmd + `"}`)}
+		if err := Record(dir, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record("t1", "./deploy.sh prod")
+	ev := logEvents(t, dir)
+	last := ev[len(ev)-1]
+	if len(last.Highlights) != 1 || last.Highlights[0].RuleID != "acme.deploy" || !strings.HasPrefix(last.RulesVersion, rules.Version+"+") {
+		t.Fatalf("custom rule not applied: %+v %q", last.Highlights, last.RulesVersion)
+	}
+
+	// A broken rule file is reported once, and recording goes on.
+	if err := os.WriteFile(ruleFile, []byte("rules: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record("t2", "ls")
+	record("t3", "ls")
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "acme.yaml") {
+		t.Fatalf("warnings = %q, want one about acme.yaml", warnings)
+	}
+	if n := len(logEvents(t, dir)); n != 3 {
+		t.Fatalf("%d events logged, want 3", n)
 	}
 }

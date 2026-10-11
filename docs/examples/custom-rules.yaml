@@ -1,0 +1,51 @@
+# Example customer highlight rules for afr.
+#
+# Put rule files (*.yaml or *.yml) in one of these folders:
+#   managed (all users, set by an administrator):
+#     Windows: %ProgramData%\afr\rules     Linux: /etc/afr/rules
+#   personal: <afr data dir>/rules
+# If the managed folder holds any rule file, the personal folder is ignored.
+#
+# Check and try rules before rolling them out:
+#   afr rules check
+#   afr rules test --file custom-rules.yaml 'psql -h prod-db.acme.internal'
+#   afr rules list
+
+rules:
+  # A shell command that reaches the production database.
+  - id: acme.prod_db_access
+    title: Command touches the production database
+    severity: high
+    description: Production data access should go through the bastion, not an agent.
+    references: [https://wiki.acme.example/policies/prod-access]
+    match:
+      command: '(?i)\b(psql|mysql|mongosh)\b.*prod-db\.acme\.internal'
+
+  # Files read under customer data folders, at any depth.
+  - id: acme.customer_data_read
+    title: Customer data read
+    severity: medium
+    match:
+      read_path:
+        - '/data/customers/**'
+        - '**/exports/*.csv'
+
+  # An internal hostname appearing anywhere: commands, output, prompts, replies.
+  - id: acme.internal_hostname
+    title: Internal hostname in content
+    severity: low
+    match:
+      content: '\b[a-z0-9-]+\.corp\.acme\.internal\b'
+
+  # Every field given must match: here, Terraform state written by a shell command.
+  - id: acme.tfstate_write
+    title: Terraform state written from the shell
+    severity: medium
+    match:
+      tool: '^(Bash|PowerShell)$'
+      write_path: '**/*.tfstate'
+
+# Change built-in rules: a different severity, or switched off.
+overrides:
+  fs.write_outside_workspace: {severity: low}
+  secrets.env_dump: {disabled: true}

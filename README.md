@@ -36,8 +36,10 @@ own hooks. Each highlight has a severity (high, medium, or low) meaning review p
 nothing is ever blocked. Highlights are evaluated as events are recorded and stored in the
 hash-chained log. When the rules change, `afr replay` also shows what the current rules
 would add to older sessions, marked with `*`, without changing the log. `--full` shows
-what each highlight matched. The rules, their severities, and the public frameworks
-behind them: [docs/highlight-rules.md](docs/highlight-rules.md).
+what each highlight matched. Organizations can add their own rules and tune or switch
+off built-in ones with YAML files (`afr rules check`, `test`, and `list` help write
+them). The rules, their severities, the public frameworks behind them, and customer
+rules: [docs/highlight-rules.md](docs/highlight-rules.md).
 
 ## Build and test
 
