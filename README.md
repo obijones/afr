@@ -18,6 +18,8 @@ afr sessions                 # most recent first: status, turns, tool calls, use
 afr replay 3394              # one session as a conversation (full id or unique prefix)
 afr replay --full 3394       # with complete prompts, replies, tool inputs, and outputs
 afr replay -o s.txt 3394     # write it to a file (UTF-8), for sharing or review
+afr export 3394 a6ac         # zip sessions to review on another machine
+afr export --last 2          # zip the two most recently active sessions
 ```
 
 A replay reads top to bottom in the order things happened: where the session began, each
@@ -33,6 +35,18 @@ with the console code page and garbles anything outside ASCII. Harness notices, 
 as a safety classifier stopping a response and switching models, appear as `NOTICE` lines
 with the category and the models involved. The header shows the agent version, the
 models used, and whether the log's hash chain verifies.
+
+### Export
+
+`afr export` writes one zip (default `afr-export-<time>.zip` in the current folder, or
+`-o FILE.zip`) holding, for each session, the log and its state file, a full replay
+(`replay-<id>.txt`), and any raw payloads, plus `afr-errors.log` (the whole error log, not
+only these sessions) and `manifest.json` with afr's version, each session's status and
+integrity result, and a SHA-256 for every file. The files keep the data directory's
+layout, so after unzipping, `AFR_HOME=<folder> afr replay <id>` works on any machine.
+Each log is read under its session lock, so exporting a live session is safe, but afr
+warns that the record is incomplete until the session ends. The zip holds full prompts and
+tool output: share it only with people allowed to see them.
 
 ## Highlights
 

@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gofrs/flock"
@@ -33,6 +34,36 @@ func SessionsDir(dataDir string) string { return filepath.Join(dataDir, "session
 // LogPath is the log file for one session.
 func LogPath(dataDir, session string) string {
 	return filepath.Join(SessionsDir(dataDir), platform.SafeFileName(session, "unknown-session")+".ndjson")
+}
+
+// StatePath is the per-session state file kept beside a log.
+func StatePath(logPath string) string {
+	return strings.TrimSuffix(logPath, ".ndjson") + ".state.json"
+}
+
+// Snapshot reads a session log and its state file under the session
+// lock, so the two agree and no half-written line is caught. The lock is
+// held only for the reads; a missing state file returns nil state.
+func Snapshot(logPath string) (log, state []byte, err error) {
+	lock := flock.New(logPath + ".lock")
+	ctx, cancel := context.WithTimeout(context.Background(), LockTimeout)
+	defer cancel()
+	ok, err := lock.TryLockContext(ctx, 10*time.Millisecond)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		return nil, nil, fmt.Errorf("store: lock: %w", err)
+	}
+	if !ok {
+		return nil, nil, ErrLockTimeout
+	}
+	defer lock.Unlock()
+	if log, err = os.ReadFile(logPath); err != nil {
+		return nil, nil, err
+	}
+	state, err = os.ReadFile(StatePath(logPath))
+	if errors.Is(err, os.ErrNotExist) {
+		err = nil
+	}
+	return log, state, err
 }
 
 // Append seals events in order and appends them to their session's log
@@ -186,11 +217,15 @@ func Verify(path string) ([]Problem, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return VerifyReader(f)
+}
 
+// VerifyReader is Verify for a log already open or in memory.
+func VerifyReader(r io.Reader) ([]Problem, error) {
 	var probs []Problem
 	var wantSeq int64 = 1
 	prev := ""
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for n := 1; sc.Scan(); n++ {
 		var e schema.Event
