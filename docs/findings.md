@@ -3,6 +3,72 @@
 Behavior of AI agents and harnesses that afr testing revealed, with evidence and what it
 means for afr. Newest first.
 
+## F-007: A new desktop conversation kept the deleted conversation's title (2026-10-11)
+
+**What we saw.** On Windows, the user asked the Claude desktop app (Code tab) for
+productivity suggestions, then deleted that conversation and started a new one about lucid
+dreaming. The new conversation's transcript (`fcb60a58`) records `custom-title` and
+`agent-name` as "Productivity suggestions" from its first lines to its last, 17 times,
+although no prompt in it is about productivity.
+
+**What it means for afr.** Nothing to fix; afr does not record titles. A reviewer should not
+trust a desktop conversation's title to describe it. Unexplained: the deleted conversation
+(`868903a5`) left only a `desktop-released.json` marker, so we cannot tell whether the title
+was carried over or generated from a stale prompt.
+
+## F-006: A session start with nothing after it, 8 seconds before the CLI session (2026-10-11)
+
+**What we saw.** Session `86e55708` has one event: `SessionStart`, `source: startup`, folder
+`C:\Users\kier\afr-test`, at 18:34:10 UTC. Its transcript file was never created. The CLI
+session (`92b7d940`, same folder) started at 18:34:18. The user had opened the desktop app
+first, then started `claude` in a terminal. The desktop conversations ran in other folders
+(F-005), and the payload does not say which app sent it.
+
+**Likely explanation (inference, not verified).** The desktop app starts a Claude Code
+process in the last folder used, which fires `SessionStart`, and discards it when the
+conversation opens in a new scratch folder. If so, desktop does run hooks from a project's
+settings. To confirm: open the desktop app alone and watch for a lone start.
+
+**What it means for afr.** A session with only a start and no transcript is noise, not a
+gap, but `afr sessions` lists it as `open` forever. Possible fix: show such sessions as
+`empty` and leave them out of gap counts in the digest.
+
+## F-005: Desktop app conversations were not recorded: hooks were registered for one project only (2026-10-11)
+
+**What we saw.** The test settings put afr's hooks in
+`C:\Users\kier\afr-test\.claude\settings.json`, which applies only to sessions in that
+folder. The CLI session there recorded fully (4 turns, 63 tool calls, `SessionEnd` reason
+`prompt_input_exit`). Three other sessions that day produced no afr record at all:
+
+| Session | App (transcript `entrypoint`) | Folder |
+| --- | --- | --- |
+| `868903a5` | `claude-desktop` | `%APPDATA%\Claude\scratch-workspaces\<ids>\scratch-2026-10-11-2aca18`, deleted by the user after one answer |
+| `fcb60a58` | `claude-desktop` | started in another scratch folder, then moved to `Documents\Lucid Dreaming Program`; used 8 subagents and web fetches |
+| `1a7e6e00` | `cli` | `C:\Users\kier\afr` |
+
+**Explanation.** The desktop Code tab does not open conversations in a project folder by
+default: each new conversation starts in a fresh scratch folder under
+`%APPDATA%\Claude\scratch-workspaces`, and can later be moved (the transcript records
+`relocated` with the new folder). Project settings in another folder never load there.
+Deleting a desktop conversation removes its transcript and leaves only
+`<id>.desktop-released.json` (`"reason": "delete"`), so nothing is left to recover from.
+
+**What it means for afr.**
+
+1. **Register hooks in user settings** (`%USERPROFILE%\.claude\settings.json`, or
+   `~/.claude/settings.json`), not in a project, so every session in every folder runs them.
+   For enterprises, managed settings (phase E). Project settings are only for sandboxes.
+2. **Deleting a conversation does not delete afr's record**, once hooks run: afr writes each
+   event when it happens, into its own folder. What afr cannot get back after a deletion is
+   anything it had not yet read from the transcript (replies between the last hook and the
+   deletion).
+3. **Moved desktop sessions:** afr's workspace for the rules is the first folder seen, so
+   after a move into `Documents\...` every write there would be flagged as outside the
+   workspace. Consider following the `relocated` record from the transcript.
+4. **Coverage check:** comparing transcripts under `~/.claude/projects` with afr's sessions
+   would have shown all three missing sessions. The threat model already lists this as the
+   answer to removed hooks; it belongs in the digest.
+
 ## F-004: Auto mode denials leave a tool call with no result in the hooks (2026-10-10)
 
 **What we saw.** In the first native Windows session (Claude Code 2.1.296, interactive CLI,
@@ -25,8 +91,9 @@ hook saw.
 result, shown as `denied by auto mode: <reason>`. The docs also show `PostToolUse` fires
 only on success, so every failed call (a command exiting non-zero, on any platform) had the
 same gap; `PostToolUseFailure` now records the error as the result. Both hooks are in
-`scripts/sandbox-setup.sh`. Payload shapes come from the hooks reference; a real Windows
-`PermissionDenied` payload is still to be captured.
+`scripts/sandbox-setup.sh`. Payload shapes come from the hooks reference. The second Windows session (2026-10-11)
+confirmed the real `PostToolUseFailure` payload (`error` holds the exit code and output);
+a real `PermissionDenied` payload is still to be captured.
 
 ## F-003: Claude Code's own background agents fire SubagentStop, and suggested prompts become user prompts (2026-10-10)
 
