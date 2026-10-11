@@ -357,3 +357,34 @@ func TestReplayWindowsSession(t *testing.T) {
 		t.Errorf("CRLF shown as \\r:\n%s", out)
 	}
 }
+
+// Session fields (folder, user, models, end reason) come from captured
+// data too, so the replay header and the session table neutralize them.
+func TestHeaderAndTableNeutralizeSessionFields(t *testing.T) {
+	evil := "x\x1b[2J\u202ey\r"
+	t0 := time.Date(2026, 10, 9, 14, 0, 0, 0, time.UTC)
+	base := schema.Event{Schema: schema.Version, Session: "s" + evil, TS: t0, User: evil, Host: evil, Cwd: evil, Agent: evil, AgentVersion: evil}
+	start, reply, end := base, base, base
+	start.EventType = schema.SessionStart
+	reply.EventType, reply.Model, reply.TS = schema.AssistantMessage, evil, t0.Add(time.Second)
+	reply.Content = &schema.Content{Text: "hi"}
+	end.EventType, end.EndReason, end.TS = schema.SessionEnd, evil, t0.Add(2*time.Second)
+	evs := []schema.Event{start, reply, end}
+
+	var b bytes.Buffer
+	if err := Replay(&b, evs, "bad"+evil, Options{Loc: time.UTC, Width: 300}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SessionTable(&b, []Summary{Summarize(evs)}, time.UTC); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	for _, bad := range []string{"\x1b", "\r", "\u202e"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("output contains raw %q:\n%s", bad, out)
+		}
+	}
+	if !strings.Contains(out, `\x1b[2J<U+202E>y\r`) {
+		t.Errorf("output does not show the escapes visibly:\n%s", out)
+	}
+}
