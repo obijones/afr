@@ -46,10 +46,12 @@ func Replay(w io.Writer, events []schema.Event, integrity string, o Options) err
 		agent += " " + strings.Join(sum.Versions, " -> ")
 	}
 	r := &replayer{w: w, o: o}
-	fmt.Fprintf(w, "SESSION %s  %s@%s  %s  %s  model: %s\n", sum.Session, sum.User, sum.Host, sum.Cwd, agent, models)
-	fmt.Fprintf(w, "%s  %s, %s, %s, %s  integrity: %s\n", sum.Started.In(o.Loc).Format("2006-01-02 MST"),
+	// The header is captured data too (folder, user, models, a verifier
+	// error), so it is neutralized like every line.
+	r.write(neutralize(fmt.Sprintf("SESSION %s  %s@%s  %s  %s  model: %s", sum.Session, sum.User, sum.Host, sum.Cwd, agent, models), false) + "\n")
+	r.write(neutralize(fmt.Sprintf("%s  %s, %s, %s, %s  integrity: %s", sum.Started.In(o.Loc).Format("2006-01-02 MST"),
 		plural(sum.Turns, "turn"), plural(sum.ToolCalls, "tool call"), plural(sum.Highlight, "highlight"),
-		plural(sum.Notices, "harness notice"), integrity)
+		plural(sum.Notices, "harness notice"), integrity), false) + "\n")
 	if m.CurrentCount > 0 {
 		fmt.Fprintf(w, "%s marked * come from the current highlight rules, not from when the session was recorded\n",
 			plural(m.CurrentCount, "highlight"))
@@ -449,6 +451,9 @@ func SessionTable(w io.Writer, rows []Summary, loc *time.Location) error {
 		default:
 			model = s.Models[len(s.Models)-1] + "+"
 		}
+		// Every column but the times comes from captured data.
+		n := func(v string) string { return neutralize(v, false) }
+		s.Status, s.User, s.Host, s.Cwd, s.Session, model = n(s.Status), n(s.User), n(s.Host), n(s.Cwd), n(s.Session), n(model)
 		_, err = fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5d  %5d  %4d  %6d  %-18s  %-20s  %-30s  %s\n",
 			s.Started.In(loc).Format("2006-01-02 15:04"), last, cut(s.Status, 16), s.Turns, s.ToolCalls, s.Highlight,
 			s.Notices, cut(model, 18), cut(s.User+"@"+s.Host, 20), cutLeft(s.Cwd, 30), s.Session)
