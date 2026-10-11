@@ -17,13 +17,19 @@ before any hook ran, and messages the harness injected. `afr verify` checks the 
 afr sessions                 # most recent first: status, turns, tool calls, user@host, dir
 afr replay 3394              # one session as a conversation (full id or unique prefix)
 afr replay --full 3394       # with complete prompts, replies, tool inputs, and outputs
+afr replay -o s.txt 3394     # write it to a file (UTF-8), for sharing or review
 ```
 
 A replay reads top to bottom in the order things happened: where the session began, each
 prompt (turns t1, t2, ...), the AI's replies, every tool call on one line with its result,
 subagent work tagged with the subagent type, highlights at the front of the line, and how
 the session ended. Tool calls the harness handled without running a hook are marked
-`(no hook ran)`; messages the harness injected are marked as such. Harness notices, such
+`(no hook ran)`; messages the harness injected are marked as such. Failed calls show the
+error, and calls auto mode refused show `denied by auto mode` with the reason. Claude
+Code's own background tasks (prompt suggestions, the session recap) appear as `HELPER`
+lines, and a prompt sent from a suggestion is marked `(accepted suggestion)`. On Windows,
+use `-o` rather than piping to `Out-File`: Windows PowerShell 5.1 re-decodes piped text
+with the console code page and garbles anything outside ASCII. Harness notices, such
 as a safety classifier stopping a response and switching models, appear as `NOTICE` lines
 with the category and the models involved. The header shows the agent version, the
 models used, and whether the log's hash chain verifies.
