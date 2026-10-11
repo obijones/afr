@@ -1,0 +1,56 @@
+:root{--bg:#fff;--fg:#1b1b1b;--mut:#5f6368;--line:#dadce0;--hd:#f3f4f6;--hd2:#e8ebf0;--acc:#1f5fbf;--hi:#b42318;--md:#9a6700;--lo:#1f6f8b;--ok:#1a7f37;--pre:#f7f7f9;--flash:#fff3bf}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121417;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2e333a;--hd:#1b1f25;--hd2:#232933;--acc:#6ea8fe;--hi:#f85149;--md:#d29922;--lo:#56b6c2;--ok:#3fb950;--pre:#181c22;--flash:#3a3200}}
+:root[data-theme="dark"]{--bg:#121417;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2e333a;--hd:#1b1f25;--hd2:#232933;--acc:#6ea8fe;--hi:#f85149;--md:#d29922;--lo:#56b6c2;--ok:#3fb950;--pre:#181c22;--flash:#3a3200}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px}
+h1{font-size:18px;margin:0}
+h2{font-size:15px;margin:18px 0 8px}
+h3{font-size:13px;margin:12px 0 4px;color:var(--mut);font-weight:600}
+p{margin:4px 0}
+.mut{color:var(--mut);font-size:12px}
+.warn-note{font-size:12px;color:var(--md)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.bar input,.bar select,.bar button{font:inherit;font-size:13px;padding:4px 8px;border:1px solid var(--line);border-radius:4px;background:var(--hd);color:var(--fg)}
+.bar input{flex:1 1 240px;min-width:0}
+main{padding:0 16px 48px}
+.node>.hd{display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-radius:3px;cursor:pointer;user-select:none}
+.node>.hd:hover{background:var(--hd)}
+.node>.ch{display:none;margin-left:9px;padding-left:12px;border-left:1px dotted var(--line)}
+.node.open>.ch{display:block}
+.tg{flex:none;width:16px;text-align:center;font-weight:700;color:var(--acc);border:1px solid var(--acc);border-radius:3px;line-height:14px;font-size:12px}
+.date>.hd{background:var(--hd2);font-weight:600}
+.user>.hd{font-weight:600}
+.sess>.hd .id{font-family:ui-monospace,Consolas,monospace;color:var(--acc)}
+.meta{color:var(--mut);font-size:12px;overflow-wrap:anywhere}
+.hidden{display:none!important}
+.facts{font-size:12px;border-collapse:collapse;margin:6px 0}
+.facts th{text-align:left;font-weight:400;color:var(--mut);padding:1px 12px 1px 0;vertical-align:top;white-space:nowrap}
+.facts td{overflow-wrap:anywhere}
+.ln{font:12.5px/1.5 ui-monospace,Consolas,"Cascadia Mono",monospace;border-radius:3px}
+.ln>.hd{display:flex;gap:8px;padding:1px 4px;cursor:pointer;align-items:baseline}
+.ln>.hd:hover{background:var(--hd)}
+.ln .t{color:var(--mut);flex:none}
+.ln .k{flex:none;width:8.5ch;font-weight:700;color:var(--mut)}
+.ln .tn{flex:none;width:3ch;color:var(--mut)}
+.ln .x{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ln.open .x{white-space:pre-wrap;overflow-wrap:anywhere}
+.ln .dt{display:none;margin:2px 0 6px 4ch}
+.ln.open .dt{display:block}
+.k-PROMPT{color:var(--acc)!important}.k-AI{color:var(--ok)!important}.k-TOOL{color:var(--fg)!important}
+.k-HELPER,.k-NOTICE,.k-NOTE{color:var(--md)!important}
+.fail{color:var(--hi)}
+.deny{color:var(--hi);font-weight:700}
+.badge{display:inline-block;font:600 11px/1.6 system-ui,sans-serif;padding:0 6px;border-radius:9px;border:1px solid currentColor;margin-right:4px;white-space:nowrap}
+.s-high{color:var(--hi)}.s-medium{color:var(--md)}.s-low{color:var(--lo)}
+.ok{color:var(--ok)}.bad{color:var(--hi);font-weight:700}.warn{color:var(--md)}
+pre{margin:2px 0 6px;padding:6px 8px;background:var(--pre);border:1px solid var(--line);border-radius:4px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:480px;overflow:auto;font:12px/1.45 ui-monospace,Consolas,monospace}
+.lbl{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.mk{font-size:12px;margin:2px 0}
+#marks .row,#flags .row{display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-bottom:1px solid var(--line);cursor:pointer;flex-wrap:wrap}
+#marks .row:hover,#flags .row:hover{background:var(--hd)}
+#marks .where{color:var(--mut);font-size:12px;font-family:ui-monospace,Consolas,monospace}
+#marks .what{flex:1 1 300px;min-width:0;overflow-wrap:anywhere;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.empty{color:var(--mut);font-size:13px}
+.flash{background:var(--flash)!important}
+@media (max-width:640px){main{padding:0 8px 48px}.node>.ch{padding-left:6px}.ln .t{display:none}}

@@ -26,8 +26,9 @@ type Options struct {
 // order things happened. Each tool call is shown with its result.
 // integrity is a one-line verdict from the verifier, shown in the header.
 func Replay(w io.Writer, events []schema.Event, integrity string, o Options) error {
-	if len(events) == 0 {
-		return fmt.Errorf("session log is empty")
+	m, err := Build(events, o.Current)
+	if err != nil {
+		return err
 	}
 	if o.Width == 0 {
 		o.Width = 110
@@ -35,42 +36,7 @@ func Replay(w io.Writer, events []schema.Event, integrity string, o Options) err
 	if o.Loc == nil {
 		o.Loc = time.Local
 	}
-	evs := InTimeOrder(events)
-	sum := Summarize(events)
-	r := &replayer{w: w, o: o, turns: map[string]string{}, results: map[string]schema.Event{}, accepted: map[string]bool{}}
-
-	// A subagent end with no agent type is one of Claude Code's own
-	// background tasks (prompt suggestions, session recap), not work the
-	// model delegated. A prompt equal to the suggestion just before it was
-	// most likely accepted from that suggestion.
-	var suggestion *schema.Event
-	for i := range evs {
-		e := &evs[i]
-		switch {
-		case isHelper(*e):
-			suggestion = e
-		case e.EventType == schema.PromptSubmit && e.Origin == "":
-			if suggestion != nil && e.Content != nil && suggestion.Content != nil &&
-				strings.TrimSpace(e.Content.Text) == strings.TrimSpace(suggestion.Content.Text) && e.Content.Text != "" {
-				r.accepted[e.EventID+e.TS.String()] = true
-				r.accepted[suggestion.EventID+suggestion.TS.String()] = true
-			}
-			suggestion = nil
-		}
-	}
-
-	for _, e := range evs {
-		if e.EventType == schema.PromptSubmit && e.TurnID != "" {
-			if _, ok := r.turns[e.TurnID]; !ok {
-				r.turns[e.TurnID] = fmt.Sprintf("t%d", len(r.turns)+1)
-			}
-		}
-		if e.EventType == schema.ToolResult && e.ToolCallID != "" {
-			r.results[e.ToolCallID] = e
-		}
-	}
-
-	start := evs[0].TS.In(o.Loc)
+	sum := m.Summary
 	models := strings.Join(sum.Models, ", ")
 	if models == "" {
 		models = "unknown"
@@ -79,92 +45,81 @@ func Replay(w io.Writer, events []schema.Event, integrity string, o Options) err
 	if len(sum.Versions) > 0 {
 		agent += " " + strings.Join(sum.Versions, " -> ")
 	}
+	r := &replayer{w: w, o: o}
 	fmt.Fprintf(w, "SESSION %s  %s@%s  %s  %s  model: %s\n", sum.Session, sum.User, sum.Host, sum.Cwd, agent, models)
-	fmt.Fprintf(w, "%s  %s, %s, %s, %s  integrity: %s\n", start.Format("2006-01-02 MST"),
+	fmt.Fprintf(w, "%s  %s, %s, %s, %s  integrity: %s\n", sum.Started.In(o.Loc).Format("2006-01-02 MST"),
 		plural(sum.Turns, "turn"), plural(sum.ToolCalls, "tool call"), plural(sum.Highlight, "highlight"),
 		plural(sum.Notices, "harness notice"), integrity)
-	if n := countHighlights(o.Current); n > 0 {
+	if m.CurrentCount > 0 {
 		fmt.Fprintf(w, "%s marked * come from the current highlight rules, not from when the session was recorded\n",
-			plural(n, "highlight"))
+			plural(m.CurrentCount, "highlight"))
 	}
 	fmt.Fprintln(w)
-
-	calls := map[string]bool{}
-	for _, e := range evs {
-		if e.EventType == schema.ToolCall {
-			calls[e.ToolCallID] = true
-		}
-	}
-	for _, e := range evs {
-		if e.EventType == schema.ToolResult && calls[e.ToolCallID] {
-			continue // printed with its call
-		}
-		r.event(e)
+	for _, l := range m.Lines {
+		r.line(l)
 	}
 	return r.err
 }
 
 type replayer struct {
-	w       io.Writer
-	o       Options
-	turns   map[string]string       // turn_id -> t1, t2, ...
-	results map[string]schema.Event // tool_call_id -> result
-	// accepted marks prompts sent from a suggestion, and the suggestions
-	// that were sent, keyed by event id and time.
-	accepted map[string]bool
-	err      error
+	w   io.Writer
+	o   Options
+	err error
 }
 
 // prefixFor builds the start of a line: time, kind, turn, then any
 // highlights and the subagent tag. Built without a format string, since
 // rule ids and agent types come from captured data.
-func (r *replayer) prefixFor(e schema.Event, kind string) string {
-	turn := r.turns[e.TurnID]
+func (r *replayer) prefixFor(l Line) string {
+	turn := l.Turn
 	if turn == "" {
 		turn = "-"
 	}
-	p := fmt.Sprintf("%s  %-9s %-3s ", e.TS.In(r.o.Loc).Format("15:04:05"), kind, turn)
+	p := fmt.Sprintf("%s  %-9s %-3s ", l.Event.TS.In(r.o.Loc).Format("15:04:05"), l.Kind, turn)
 	// Highlights go first, so a long line can never cut them off.
-	for _, h := range r.highlights(e) {
-		p += "[" + strings.ToUpper(h.Severity) + " " + h.RuleID + "] "
+	for _, h := range l.Marks {
+		p += "[" + strings.ToUpper(h.Severity) + " " + h.Label() + "] "
 	}
-	if e.AgentType != "" {
-		p += "[" + e.AgentType + "] "
+	if l.Event.AgentType != "" {
+		p += "[" + l.Event.AgentType + "] "
 	}
 	return p
 }
 
-// highlights merges what a line shows: the event's stored highlights, a
-// tool call's result highlights, and current-rule additions (marked *),
-// highest severity first, one per rule.
-func (r *replayer) highlights(e schema.Event) []schema.Highlight {
-	stored := append([]schema.Highlight(nil), e.Highlights...)
-	extra := append([]schema.Highlight(nil), r.o.Current[e.EventID]...)
-	if e.EventType == schema.ToolCall {
-		if res, ok := r.results[e.ToolCallID]; ok {
-			stored = append(stored, res.Highlights...)
-			extra = append(extra, r.o.Current[res.EventID]...)
+func (r *replayer) line(l Line) {
+	text := l.Text
+	if t := l.Tool; t != nil {
+		// Fit both command and status: when the line is too long, the
+		// status gets at most about 40% of the room, the command the rest.
+		head := fmt.Sprintf("%-5s  ", t.Name)
+		const sep = "  ->  "
+		summary, st := t.Summary, t.Status
+		avail := r.o.Width - len(neutralize(r.prefixFor(l), false)) - len(head) - len(sep)
+		if len(summary)+len(st) > avail {
+			if maxSt := max(avail*2/5, 24); len(st) > maxSt {
+				st = cut(st, maxSt-3) + "..."
+			}
+			if room := max(avail-len(st), 20); len(summary) > room {
+				summary = cut(summary, room-3) + "..."
+			}
 		}
+		text = head + summary + sep + st
 	}
-	for i := range extra {
-		extra[i].RuleID += "*"
-	}
-	return rankHighlights(append(stored, extra...))
-}
-
-func (r *replayer) line(e schema.Event, kind, text string) {
-	s := neutralize(r.prefixFor(e, kind)+text, false)
+	s := neutralize(r.prefixFor(l)+text, false)
 	if len(s) > r.o.Width {
 		s = cut(s, r.o.Width-3) + "..."
 	}
 	r.write(s + "\n")
 	var why []string
-	for _, h := range r.highlights(e) {
+	for _, h := range l.Marks {
 		if h.Detail != "" {
-			why = append(why, strings.ToUpper(h.Severity)+" "+h.RuleID+": "+h.Detail)
+			why = append(why, strings.ToUpper(h.Severity)+" "+h.Label()+": "+h.Detail)
 		}
 	}
 	r.detail("highlights", strings.Join(why, "\n"))
+	for _, d := range l.Details {
+		r.detail(d.Label, d.Body)
+	}
 }
 
 // detail prints a full value under its line, indented, in --full mode.
@@ -184,96 +139,6 @@ func (r *replayer) detail(label, body string) {
 func (r *replayer) write(s string) {
 	if r.err == nil {
 		_, r.err = io.WriteString(r.w, s)
-	}
-}
-
-func (r *replayer) event(e schema.Event) {
-	c := e.Content
-	if c == nil {
-		c = &schema.Content{}
-	}
-	switch e.EventType {
-	case schema.SessionStart:
-		src := e.Source
-		if src == "" {
-			src = "start"
-		}
-		r.line(e, "START", src)
-	case schema.PromptSubmit:
-		note := ""
-		if e.Origin == schema.OriginTranscript {
-			note = "(injected by the harness) "
-		} else if r.accepted[e.EventID+e.TS.String()] {
-			note = "(accepted suggestion) "
-		}
-		r.line(e, "PROMPT", note+quote(oneLine(c.Text)))
-		r.detail("prompt", c.Text)
-	case schema.AssistantMessage:
-		r.line(e, "AI", quote(oneLine(c.Text)))
-		r.detail("reply", c.Text)
-	case schema.ToolCall:
-		res, ok := r.results[e.ToolCallID]
-		status := "no result (refused, interrupted, or failed)"
-		if ok {
-			status = resultSummary(e.Tool, res)
-		}
-		name := e.Tool
-		if e.Origin == schema.OriginTranscript {
-			name += " (no hook ran)" // handled by the harness itself
-		}
-		// Fit both command and status: when the line is too long, the
-		// status gets at most about 40% of the room, the command the rest.
-		head := fmt.Sprintf("%-5s  ", name)
-		const sep = "  ->  "
-		summary, st := oneLine(relativeTo(e.Cwd, toolSummary(e.Tool, c.Input))), oneLine(status)
-		avail := r.o.Width - len(neutralize(r.prefixFor(e, "TOOL"), false)) - len(head) - len(sep)
-		if len(summary)+len(st) > avail {
-			if maxSt := max(avail*2/5, 24); len(st) > maxSt {
-				st = cut(st, maxSt-3) + "..."
-			}
-			if room := max(avail-len(st), 20); len(summary) > room {
-				summary = cut(summary, room-3) + "..."
-			}
-		}
-		tail := sep + st
-		r.line(e, "TOOL", head+summary+tail)
-		r.detail("input", pretty(c.Input))
-		if ok && res.Content != nil {
-			r.detail("output", outputText(res.Content.Output))
-		}
-	case schema.ToolResult: // a result whose call was not logged
-		r.line(e, "RESULT", fmt.Sprintf("%-5s  ->  %s", e.Tool, oneLine(resultSummary(e.Tool, e))))
-		r.detail("output", outputText(c.Output))
-	case schema.SubagentEnd:
-		if isHelper(e) {
-			what := "Claude Code background task: "
-			if r.accepted[e.EventID+e.TS.String()] {
-				what = "Claude Code suggested the next prompt: "
-			}
-			r.line(e, "HELPER", what+quote(oneLine(c.Text)))
-			r.detail("output", c.Text)
-			break
-		}
-		r.line(e, "SUBAGENT", "finished: "+quote(oneLine(c.Text)))
-		r.detail("report", c.Text)
-	case schema.TurnEnd:
-		r.line(e, "TURN END", "")
-	case schema.SessionEnd:
-		reason := e.EndReason
-		if reason == "" {
-			reason = "ended"
-		}
-		r.line(e, "END", reason)
-	case schema.HarnessNotice:
-		r.line(e, "NOTICE", noticeSummary(e))
-		r.detail("notice", c.Text)
-		if e.Notice != nil {
-			r.detail("explanation", e.Notice.Explanation)
-		}
-	case schema.AfrError:
-		r.line(e, "NOTE", "afr: "+oneLine(c.Text))
-	default:
-		r.line(e, "NOTE", e.HookEvent)
 	}
 }
 

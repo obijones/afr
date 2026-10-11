@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="{{CSP}}">
+<meta name="referrer" content="no-referrer">
+<title>afr report</title>
+<style>{{CSS}}</style>
+</head>
+<body>
+<header>
+<h1>afr report</h1>
+<p id="meta" class="mut"></p>
+<p class="warn-note">This report holds full prompts and tool output. Share it only with people allowed to see them.</p>
+<div class="bar">
+<input id="q" type="search" placeholder="Search prompts, commands, output, rules" aria-label="Search">
+<select id="sev" aria-label="Minimum severity"><option value="">All lines</option><option value="low">Highlights: low and up</option><option value="medium">Highlights: medium and up</option><option value="high">Highlights: high only</option></select>
+<button id="expand" type="button">Expand all</button>
+<button id="collapse" type="button">Collapse all</button>
+<span id="count" class="mut"></span>
+</div>
+</header>
+<main>
+<section id="triage" aria-labelledby="triage-h"><h2 id="triage-h">Triage</h2><h3>Sessions to check</h3><div id="flags"></div><h3>Highlights, highest first</h3><div id="marks"></div></section>
+<section aria-labelledby="sessions-h"><h2 id="sessions-h">Sessions</h2><div id="tree"></div></section>
+<noscript><p>This report needs JavaScript to draw the sessions. The data is in the page source.</p></noscript>
+</main>
+<script type="application/json" id="afr-data">{{DATA}}</script>
+<script>{{JS}}</script>
+</body>
+</html>
