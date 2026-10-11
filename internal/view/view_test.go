@@ -311,3 +311,49 @@ func TestRescanMarksCurrentRuleHighlights(t *testing.T) {
 		t.Fatalf("re-evaluated current-version events: %v", cur)
 	}
 }
+
+func TestReplayWindowsSession(t *testing.T) {
+	t0 := time.Date(2026, 10, 10, 17, 0, 0, 0, time.UTC)
+	n := 0
+	at := func(e schema.Event) schema.Event {
+		n++
+		e.Schema, e.Session, e.Cwd = schema.Version, "w1", `C:\Users\user\afr-test`
+		e.EventID, e.TS = fmt.Sprintf("e%02d", n), t0.Add(time.Duration(n)*time.Second)
+		return e
+	}
+	txt := func(s string) *schema.Content { return &schema.Content{Text: s} }
+	events := []schema.Event{
+		at(schema.Event{EventType: schema.PromptSubmit, TurnID: "p1", Content: txt("make folders")}),
+		at(schema.Event{EventType: schema.ToolCall, TurnID: "p1", Tool: "PowerShell", ToolCallID: "c1", Content: &schema.Content{Input: json.RawMessage(`{"command":"New-Item -ItemType Directory docs","description":"make a folder"}`)}}),
+		at(schema.Event{EventType: schema.ToolResult, TurnID: "p1", Tool: "PowerShell", ToolCallID: "c1", Content: &schema.Content{Output: json.RawMessage(`{"stdout":"Name : docs\r\n\r\nMode : d-----\r\n"}`)}}),
+		at(schema.Event{EventType: schema.ToolCall, TurnID: "p1", Tool: "PowerShell", ToolCallID: "c2", Content: &schema.Content{Input: json.RawMessage(`{"command":"Get-ChildItem -Recurse C:\\"}`)}}),
+		at(schema.Event{EventType: schema.ToolResult, TurnID: "p1", Tool: "PowerShell", ToolCallID: "c2", ToolError: true, HookEvent: "PermissionDenied", Content: &schema.Content{Output: json.RawMessage(`"denied by auto mode: [Scope Escalation]"`)}}),
+		at(schema.Event{EventType: schema.TurnEnd, TurnID: "p1"}),
+		at(schema.Event{EventType: schema.SubagentEnd, TurnID: "p1", Content: txt("add a README")}),
+		at(schema.Event{EventType: schema.PromptSubmit, TurnID: "p2", Content: txt("add a README")}),
+		at(schema.Event{EventType: schema.TurnEnd, TurnID: "p2"}),
+		at(schema.Event{EventType: schema.SubagentEnd, TurnID: "p2", Content: txt("commit the changes")}),
+		at(schema.Event{EventType: schema.PromptSubmit, TurnID: "p3", Content: txt("something else")}),
+	}
+	var b bytes.Buffer
+	if err := Replay(&b, events, "ok", Options{Loc: time.UTC, Full: true, Width: 200}); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	for _, want := range []string{
+		"PowerShell  New-Item -ItemType Directory docs  ->",
+		"            Name : docs\n",
+		"->  denied by auto mode: [Scope Escalation]",
+		`HELPER    t1  Claude Code suggested the next prompt: "add a README"`,
+		`PROMPT    t2  (accepted suggestion) "add a README"`,
+		`HELPER    t2  Claude Code background task: "commit the changes"`,
+		`PROMPT    t3  "something else"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("replay lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `\r`) {
+		t.Errorf("CRLF shown as \\r:\n%s", out)
+	}
+}

@@ -23,6 +23,8 @@ cat > "$sandbox/.claude/settings.local.json" <<EOF
     "UserPromptSubmit": $(hook),
     "PreToolUse": $(tool_hook),
     "PostToolUse": $(tool_hook),
+    "PostToolUseFailure": $(tool_hook),
+    "PermissionDenied": $(tool_hook),
     "Stop": $(hook),
     "SubagentStop": $(hook),
     "PreCompact": $(hook),
