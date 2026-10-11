@@ -37,7 +37,27 @@ func Replay(w io.Writer, events []schema.Event, integrity string, o Options) err
 	}
 	evs := InTimeOrder(events)
 	sum := Summarize(events)
-	r := &replayer{w: w, o: o, turns: map[string]string{}, results: map[string]schema.Event{}}
+	r := &replayer{w: w, o: o, turns: map[string]string{}, results: map[string]schema.Event{}, accepted: map[string]bool{}}
+
+	// A subagent end with no agent type is one of Claude Code's own
+	// background tasks (prompt suggestions, session recap), not work the
+	// model delegated. A prompt equal to the suggestion just before it was
+	// most likely accepted from that suggestion.
+	var suggestion *schema.Event
+	for i := range evs {
+		e := &evs[i]
+		switch {
+		case isHelper(*e):
+			suggestion = e
+		case e.EventType == schema.PromptSubmit && e.Origin == "":
+			if suggestion != nil && e.Content != nil && suggestion.Content != nil &&
+				strings.TrimSpace(e.Content.Text) == strings.TrimSpace(suggestion.Content.Text) && e.Content.Text != "" {
+				r.accepted[e.EventID+e.TS.String()] = true
+				r.accepted[suggestion.EventID+suggestion.TS.String()] = true
+			}
+			suggestion = nil
+		}
+	}
 
 	for _, e := range evs {
 		if e.EventType == schema.PromptSubmit && e.TurnID != "" {
@@ -89,7 +109,10 @@ type replayer struct {
 	o       Options
 	turns   map[string]string       // turn_id -> t1, t2, ...
 	results map[string]schema.Event // tool_call_id -> result
-	err     error
+	// accepted marks prompts sent from a suggestion, and the suggestions
+	// that were sent, keyed by event id and time.
+	accepted map[string]bool
+	err      error
 }
 
 // prefixFor builds the start of a line: time, kind, turn, then any
@@ -150,6 +173,9 @@ func (r *replayer) detail(label, body string) {
 		return
 	}
 	r.write("          " + label + ":\n")
+	// Windows line endings are line breaks; a lone \r stays visible,
+	// since on a terminal it can overwrite text already printed.
+	body = strings.ReplaceAll(body, "\r\n", "\n")
 	for _, l := range strings.Split(strings.TrimRight(neutralize(body, true), "\n"), "\n") {
 		r.write("            " + l + "\n")
 	}
@@ -177,6 +203,8 @@ func (r *replayer) event(e schema.Event) {
 		note := ""
 		if e.Origin == schema.OriginTranscript {
 			note = "(injected by the harness) "
+		} else if r.accepted[e.EventID+e.TS.String()] {
+			note = "(accepted suggestion) "
 		}
 		r.line(e, "PROMPT", note+quote(oneLine(c.Text)))
 		r.detail("prompt", c.Text)
@@ -217,6 +245,15 @@ func (r *replayer) event(e schema.Event) {
 		r.line(e, "RESULT", fmt.Sprintf("%-5s  ->  %s", e.Tool, oneLine(resultSummary(e.Tool, e))))
 		r.detail("output", outputText(c.Output))
 	case schema.SubagentEnd:
+		if isHelper(e) {
+			what := "Claude Code background task: "
+			if r.accepted[e.EventID+e.TS.String()] {
+				what = "Claude Code suggested the next prompt: "
+			}
+			r.line(e, "HELPER", what+quote(oneLine(c.Text)))
+			r.detail("output", c.Text)
+			break
+		}
 		r.line(e, "SUBAGENT", "finished: "+quote(oneLine(c.Text)))
 		r.detail("report", c.Text)
 	case schema.TurnEnd:
@@ -238,6 +275,13 @@ func (r *replayer) event(e schema.Event) {
 	default:
 		r.line(e, "NOTE", e.HookEvent)
 	}
+}
+
+// isHelper reports a subagent end that came from one of Claude Code's
+// own background tasks: those carry no agent type, while subagents the
+// model launches with the Agent tool do.
+func isHelper(e schema.Event) bool {
+	return e.EventType == schema.SubagentEnd && e.AgentType == ""
 }
 
 // noticeSummary puts what a reviewer needs first: level, and for a model
@@ -283,7 +327,7 @@ func toolSummary(tool string, in json.RawMessage) string {
 	}
 	str := func(k string) string { s, _ := m[k].(string); return s }
 	switch tool {
-	case "Bash":
+	case "Bash", "PowerShell", "Monitor":
 		if s := str("command"); s != "" {
 			return s
 		}
@@ -331,6 +375,8 @@ func resultSummary(tool string, res schema.Event) string {
 	var m map[string]any
 	_ = json.Unmarshal(out, &m)
 	switch {
+	case res.ToolError && res.HookEvent == "PermissionDenied":
+		s = firstLine(outputText(out))
 	case res.ToolError:
 		msg := strings.TrimSuffix(strings.TrimPrefix(firstLine(outputText(out)), "<tool_use_error>"), "</tool_use_error>")
 		s = "error: " + msg
@@ -495,7 +541,7 @@ func oneLine(s string) string {
 func firstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
+		return strings.TrimRight(s[:i], "\r")
 	}
 	return s
 }

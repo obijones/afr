@@ -14,8 +14,8 @@ const usage = `usage: afr <command>
 commands:
   hook      read one agent hook payload on stdin and record it (always exits 0)
   sessions  list recorded sessions, most recent first: afr sessions [-n N]
-  replay    print one session as a conversation: afr replay [--full] <session-id or prefix>
-  verify    check a session log's sequence numbers and hash chain: afr verify <session-id>
+  replay    print one session as a conversation: afr replay [--full] [-o FILE] <session-id or prefix>
+  verify    check a session log's sequence numbers and hash chain: afr verify <session-id or prefix>
   rules     list, check, and test highlight rules: afr rules <list | check | test>
   version   print the afr version
 `
