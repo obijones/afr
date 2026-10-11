@@ -43,7 +43,16 @@ func TestReportCannotBeInjected(t *testing.T) {
 	evs := synthetic()
 	evs[1].Content = &schema.Content{Text: evil}
 	evs[5].Content = &schema.Content{Output: json.RawMessage(`{"stdout":` + jsonString(evil) + `}`)}
-	page := reportOf(t, []ReportSession{{Events: evs, Integrity: "ok", OK: true}})
+	for i := range evs {
+		evs[i].Cwd, evs[i].User, evs[i].Host = evil, evil, evil
+		if evs[i].Model != "" {
+			evs[i].Model = evil
+		}
+		if evs[i].EventType == schema.SessionEnd {
+			evs[i].EndReason = evil
+		}
+	}
+	page := reportOf(t, []ReportSession{{Events: evs, Integrity: evil, OK: false}})
 
 	if n := strings.Count(strings.ToLower(page), "<script"); n != 2 {
 		t.Errorf("page has %d <script tags, want 2", n)
