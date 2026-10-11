@@ -85,6 +85,9 @@ func Check(x Expect, events []schema.Event, integrityOK bool, attempted []string
 		case schema.SessionStart:
 			runs++
 		case schema.SubagentEnd:
+			if e.AgentType == "" {
+				break // one of Claude Code's own background tasks, not a subagent
+			}
 			subagents++
 		case schema.PromptSubmit:
 			if e.Content != nil {

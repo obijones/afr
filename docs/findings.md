@@ -21,6 +21,13 @@ record the denial as the call's result, so the replay says "denied by auto mode"
 guessing. The transcript also holds the denial, but afr only recovers results for calls no
 hook saw.
 
+**Fixed** on branch `fix/windows-capture-gaps`: `PermissionDenied` becomes the call's
+result, shown as `denied by auto mode: <reason>`. The docs also show `PostToolUse` fires
+only on success, so every failed call (a command exiting non-zero, on any platform) had the
+same gap; `PostToolUseFailure` now records the error as the result. Both hooks are in
+`scripts/sandbox-setup.sh`. Payload shapes come from the hooks reference; a real Windows
+`PermissionDenied` payload is still to be captured.
+
 ## F-003: Claude Code's own background agents fire SubagentStop, and suggested prompts become user prompts (2026-10-10)
 
 **What we saw.** Same Windows session. After every turn a `SubagentStop` arrived with an
@@ -57,6 +64,10 @@ is marked in hook payloads or the transcript.
    such, not as subagent work, and say what they produced (a suggested prompt, a recap).
 2. For attribution, mark a prompt whose text equals the suggestion just made: the words
    came from the model, the decision to send them from the user.
+
+**Fixed** on branch `fix/windows-capture-gaps`, at read time: these appear as `HELPER` lines
+("Claude Code suggested the next prompt" or "Claude Code background task"), the prompt is
+marked `(accepted suggestion)`, and the seeded scenario no longer counts them as subagents.
 
 ## F-002: Opus 5.5's classifier switched an interactive session to Opus 4.8 over a calc.exe launcher (2026-10-10)
 

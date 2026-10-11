@@ -35,6 +35,9 @@ type claudePayload struct {
 	AgentType            string          `json:"agent_type"`
 	AgentTranscriptPath  string          `json:"agent_transcript_path"`
 	LastAssistantMessage string          `json:"last_assistant_message"`
+	Model                string          `json:"model"`        // SessionStart only, not always present
+	Error                string          `json:"error"`        // PostToolUseFailure
+	IsInterrupt          bool            `json:"is_interrupt"` // PostToolUseFailure
 }
 
 // ErrNotClaudeCode means the payload lacks the fields every Claude Code
@@ -89,6 +92,7 @@ func FromClaudeCode(payload []byte, now time.Time, id Identity) (*Converted, err
 	case "SessionStart":
 		e.EventType = schema.SessionStart
 		e.Source = p.Source
+		e.Model = p.Model
 		e.PermissionMode = p.PermissionMode
 		e.TranscriptPath = p.TranscriptPath
 	case "UserPromptSubmit":
@@ -105,6 +109,23 @@ func FromClaudeCode(payload []byte, now time.Time, id Identity) (*Converted, err
 		e.Tool, e.ToolCallID = p.ToolName, p.ToolUseID
 		e.DurationMS = p.DurationMS
 		e.Content = jsonContent(nil, p.ToolResponse)
+	case "PostToolUseFailure":
+		// PostToolUse fires only on success; a failed call reports here.
+		e.EventType = schema.ToolResult
+		e.Tool, e.ToolCallID = p.ToolName, p.ToolUseID
+		e.DurationMS = p.DurationMS
+		e.ToolError = true
+		msg := p.Error
+		if p.IsInterrupt {
+			msg = "interrupted: " + msg
+		}
+		e.Content = jsonContent(nil, jsonString(msg))
+	case "PermissionDenied":
+		// Auto mode refused the call before it ran; no PostToolUse follows.
+		e.EventType = schema.ToolResult
+		e.Tool, e.ToolCallID = p.ToolName, p.ToolUseID
+		e.ToolError = true
+		e.Content = jsonContent(nil, jsonString("denied by auto mode: "+p.Reason))
 	case "Stop":
 		c.ReadTranscript = true
 		e.EventType = schema.TurnEnd
@@ -131,6 +152,11 @@ func FromClaudeCode(payload []byte, now time.Time, id Identity) (*Converted, err
 	}
 	c.Events = []schema.Event{e}
 	return c, nil
+}
+
+func jsonString(s string) json.RawMessage {
+	b, _ := json.Marshal(s)
+	return b
 }
 
 func textContent(s string) *schema.Content {

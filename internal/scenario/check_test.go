@@ -25,7 +25,8 @@ func TestCheck(t *testing.T) {
 		}),
 		call("Bash", `{"command":"wc -l notes.txt"}`, func(e *schema.Event) { e.AgentType = "general-purpose" }),
 		call("Bash", `{"command":"sleep 90 && echo done"}`, func(e *schema.Event) { e.Origin = schema.OriginTranscript }),
-		{EventType: schema.SubagentEnd},
+		{EventType: schema.SubagentEnd, AgentType: "general-purpose"},
+		{EventType: schema.SubagentEnd}, // a prompt suggestion: not a subagent
 		{EventType: schema.AssistantMessage, TurnID: "p1"},
 	}
 	x := Expect{
@@ -52,6 +53,7 @@ func TestCheck(t *testing.T) {
 	x.ToolCalls = append(x.ToolCalls, ToolCall{Contains: "wc -l", Tool: "Read"})
 	x.Highlights[1].Required = true
 	x.MinRuns = 2
+	x.MinSubagentEnds = 2 // the background task does not count
 	rs = Check(x, events, false, nil)
 	var fails int
 	for _, r := range rs {
@@ -59,9 +61,9 @@ func TestCheck(t *testing.T) {
 			fails++
 		}
 	}
-	// integrity, runs, the Read-tool mismatch, the required missing highlight
-	if fails != 4 {
-		t.Fatalf("got %d failures, want 4: %+v", fails, rs)
+	// integrity, runs, subagent ends, the Read-tool mismatch, the required missing highlight
+	if fails != 5 {
+		t.Fatalf("got %d failures, want 5: %+v", fails, rs)
 	}
 }
 
