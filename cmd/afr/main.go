@@ -17,6 +17,7 @@ commands:
   replay    print one session as a conversation: afr replay [--full] [-o FILE] <session-id or prefix>
   verify    check a session log's sequence numbers and hash chain: afr verify <session-id or prefix>
   export    zip sessions for review elsewhere: afr export [-o FILE.zip] <session-id or prefix> [...] | --last N
+  report    one HTML page for reviewing many sessions: afr report [-o FILE.html] [--since 7d] [session-id ...]
   rules     list, check, and test highlight rules: afr rules <list | check | test>
   version   print the afr version
 `
@@ -44,6 +45,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runVerify(args[1:], stdout, stderr)
 	case "export":
 		return runExport(args[1:], stdout, stderr)
+	case "report":
+		return runReport(args[1:], stdout, stderr)
 	case "rules":
 		return runRules(args[1:], stdout, stderr)
 	case "version":
