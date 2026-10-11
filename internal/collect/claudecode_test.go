@@ -155,3 +155,54 @@ func TestClaudeTranscriptHints(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowsCapture(t *testing.T) {
+	load := func(name string) schema.Event {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join("../../testdata/claude-code/2.1.296-windows", name+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := FromClaudeCode(b, time.Unix(1700000000, 0), Identity{})
+		if err != nil || len(c.Events) == 0 {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return c.Events[len(c.Events)-1]
+	}
+	if e := load("SessionStart-startup"); e.Model != "claude-opus-5-5" || e.Cwd != `C:\Users\user\afr-test` {
+		t.Errorf("session start: model %q cwd %q", e.Model, e.Cwd)
+	}
+	if e := load("UserPromptSubmit"); e.PermissionMode != "auto" {
+		t.Errorf("permission mode %q", e.PermissionMode)
+	}
+	if e := load("PreToolUse-PowerShell"); e.Tool != "PowerShell" || !strings.Contains(string(e.Content.Input), "New-Item") {
+		t.Errorf("PowerShell call: %+v", e)
+	}
+	if e := load("SubagentStop-suggestion"); e.EventType != schema.SubagentEnd || e.AgentType != "" || e.Content.Text != "add a README to each folder" {
+		t.Errorf("suggestion: %+v", e)
+	}
+}
+
+func TestFailureAndDenialBecomeResults(t *testing.T) {
+	conv := func(p string) schema.Event {
+		t.Helper()
+		c, err := FromClaudeCode([]byte(p), time.Unix(1700000000, 0), Identity{})
+		if err != nil || len(c.Events) != 1 {
+			t.Fatalf("%v %+v", err, c)
+		}
+		return c.Events[0]
+	}
+	// Payload shapes from the Claude Code hooks reference.
+	f := conv(`{"session_id":"s","hook_event_name":"PostToolUseFailure","tool_name":"Bash","tool_input":{"command":"npm test"},"tool_use_id":"t1","error":"Exit code 1\nError: Cannot find module 'express'","is_interrupt":false,"duration_ms":4187}`)
+	if f.EventType != schema.ToolResult || !f.ToolError || f.ToolCallID != "t1" || *f.DurationMS != 4187 ||
+		!strings.Contains(string(f.Content.Output), "Exit code 1") {
+		t.Errorf("failure: %+v %s", f, f.Content.Output)
+	}
+	d := conv(`{"session_id":"s","hook_event_name":"PermissionDenied","permission_mode":"auto","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/build"},"tool_use_id":"t2","reason":"[Irreversible Local Destruction]"}`)
+	var out string
+	_ = json.Unmarshal(d.Content.Output, &out)
+	if d.EventType != schema.ToolResult || !d.ToolError || d.ToolCallID != "t2" || d.HookEvent != "PermissionDenied" ||
+		out != "denied by auto mode: [Irreversible Local Destruction]" {
+		t.Errorf("denial: %+v %q", d, out)
+	}
+}

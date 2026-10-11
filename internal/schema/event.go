@@ -53,7 +53,7 @@ type Event struct {
 	User      string    `json:"user"`
 	Host      string    `json:"host"`
 	Agent     string    `json:"agent"`
-	Model     string    `json:"model,omitempty"` // the model that wrote an AI reply
+	Model     string    `json:"model,omitempty"` // the model that wrote an AI reply, or the starting model on session.start
 	// AgentVersion is the harness version, from its transcript; empty
 	// until the first transcript read in a session.
 	AgentVersion string `json:"agent_version,omitempty"`
