@@ -592,3 +592,20 @@ func installRule(in input, c *Context, s highlightSet) {
 		}
 	}
 }
+
+// MaskSecrets replaces every secret-shaped string in text with its masked
+// form, for summary lines a reviewer may share. It never panics.
+func MaskSecrets(text string) (out string) {
+	out = text
+	defer func() {
+		if recover() != nil {
+			out = text
+		}
+	}()
+	return get("secret").ReplaceAllStringFunc(text, func(m string) string {
+		if v := mask(m); v != "" {
+			return v
+		}
+		return "[private key]"
+	})
+}

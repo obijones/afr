@@ -35,11 +35,11 @@ type Line struct {
 
 // ToolLine is a tool call's line in parts.
 type ToolLine struct {
-	Name    string // tool name, with "(no hook ran)" when the harness ran it alone
-	Summary string // the command, path, or other input a reviewer needs
-	Status  string // result in a few words
-	Failed  bool   // the call failed or was refused
-	Denied  bool   // auto mode refused it
+	Name    string `json:"name"`             // tool name, with "(no hook ran)" when the harness ran it alone
+	Summary string `json:"summary"`          // the command, path, or other input a reviewer needs
+	Status  string `json:"status"`           // result in a few words
+	Failed  bool   `json:"failed,omitempty"` // the call failed or was refused
+	Denied  bool   `json:"denied,omitempty"` // auto mode refused it
 }
 
 // Detail is one full value: a prompt, a reply, tool input or output.

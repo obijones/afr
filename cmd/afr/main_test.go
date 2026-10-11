@@ -9,8 +9,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -134,5 +136,53 @@ func TestExport(t *testing.T) {
 	}
 	if code := run([]string{"export"}, nil, &out, &errb); code == 0 || code == 2 {
 		t.Errorf("export with no sessions named: %d", code)
+	}
+}
+
+func TestReport(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("AFR_HOME", home)
+	payload, err := os.ReadFile("../../testdata/claude-code/2.1.296-windows/UserPromptSubmit.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runHook(bytes.NewReader(payload))
+	file := filepath.Join(t.TempDir(), "r.html")
+	var out, errb bytes.Buffer
+	if code := run([]string{"report", "-o", file}, nil, &out, &errb); code != 0 {
+		t.Fatalf("report: %d %s", code, errb.String())
+	}
+	b, err := os.ReadFile(file)
+	if err != nil || !strings.Contains(string(b), "a6ac7efa-4d80-4eee-8ffa-6159bda964ed") || !strings.Contains(out.String(), "1 session") {
+		t.Fatalf("report output: %v %s", err, out.String())
+	}
+	if fi, _ := os.Stat(file); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Errorf("report mode %v, want 0600", fi.Mode().Perm())
+	}
+	// A cutoff after the session leaves nothing to report.
+	if code := run([]string{"report", "-o", file, "--since", "2099-01-01"}, nil, &out, &errb); code != 1 {
+		t.Errorf("report with nothing selected: %d", code)
+	}
+	if code := run([]string{"report", "--since", "soon"}, nil, &out, &errb); code != 1 {
+		t.Errorf("bad --since: %d", code)
+	}
+}
+
+func TestParseSince(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.Local)
+	for in, want := range map[string]time.Time{
+		"7d":         now.AddDate(0, 0, -7),
+		"36h":        now.Add(-36 * time.Hour),
+		"2026-10-01": time.Date(2026, 10, 1, 0, 0, 0, 0, time.Local),
+	} {
+		got, err := parseSince(in, now)
+		if err != nil || !got.Equal(want) {
+			t.Errorf("parseSince(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"", "-3d", "x", "-1h"} {
+		if _, err := parseSince(bad, now); err == nil {
+			t.Errorf("parseSince(%q) accepted", bad)
+		}
 	}
 }
