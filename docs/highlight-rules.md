@@ -44,7 +44,7 @@ Bump `rules.Version` whenever a rule's matching or severity changes.
 | | | A bare encoded command (`powershell -enc`, `FromBase64String`) | medium | Sigma ladders generic `-enc` at medium |
 | 5 | `net.outbound_transfer` | Uploads: `curl -d/-F/-T`, POST or PUT, `wget --post-file`, `scp`/`rsync` to a remote, data piped to `nc`, PowerShell `-Body`/`-InFile`, cloud storage uploads | medium | ATT&CK [T1048](https://attack.mitre.org/techniques/T1048/), [T1567](https://attack.mitre.org/techniques/T1567/) |
 | | | The same, to file-sharing, paste, or webhook sites (0x0.st, transfer.sh, pastebin, webhook.site, Discord and Slack webhooks, ...) | high | Sigma rates uploads to file-sharing sites high |
-| 6 | `fs.write_outside_workspace` | Writes outside the project folder (file tools, redirects, `tee`, `cp`, `mv`, PowerShell content cmdlets) | medium (afr-adjusted) | OWASP ASI05 mitigation 4 (dedicated working directory) |
+| 6 | `fs.write_outside_workspace` | Writes outside the project folder (file tools, redirects, `tee`, `cp`, `mv`, PowerShell content cmdlets, .NET file calls such as `[IO.File]::WriteAllText`) | medium (afr-adjusted) | OWASP ASI05 mitigation 4 (dedicated working directory) |
 | | | Writes to temp folders (`/tmp`, `$TMPDIR`, `%TEMP%`) | low | Caches and package stores are not flagged |
 | | | The workspace is the first working folder, plus folders the Claude desktop app moved the session to (its `change_directory` tool) and the session's scratchpad (`scratchpad_dir`); writes there are not flagged. A folder the agent reaches with `cd` does not count. | | Desktop findings F-012 |
 | 7 | `persist.autostart` | Shell rc and profile files, PowerShell profiles, cron, systemd units and `systemctl enable`, launchd, Run keys, scheduled tasks, new services | high (afr-adjusted) | ATT&CK [T1546.004](https://attack.mitre.org/techniques/T1546/004/), T1053.003, T1543, T1547.001; Elastic GenAI rc-write rule (high) |
@@ -88,6 +88,10 @@ reading `known_hosts` or public keys, and writes to caches and package stores.
   directory; a `cd` earlier in the same command is not followed. PowerShell variables
   assigned a path earlier in the same command (`$p = Join-Path $env:TEMP 'x'`) are
   followed; other indirection is not.
+- Commands are split on `|`, `&&`, `;`, newlines, and block braces, so commands inside
+  PowerShell `if`, `else`, and loop bodies (`if (...) { New-Item ... }`) and after shell
+  keywords (`then rm -rf ...`) are seen (rules version 3; earlier versions missed them).
+  Commands inside parentheses or `$(...)` are not split out.
 - What a script does when it runs is invisible: a script that reads every file in a
   folder shows only as the command that ran it.
 - Rules 2 and 13 make afr's own log sensitive when they fire: the secret is in the
