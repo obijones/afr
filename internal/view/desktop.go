@@ -171,6 +171,24 @@ func handbackReport(text string) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
+// harnessWarning splits the notice Claude Code puts before a subagent's
+// report when the report matches its instruction-shaped patterns:
+// "[harness: subagent output matched instruction-shaped pattern(s): P. ...]".
+// It returns the patterns, the whole notice, and the report without it.
+func harnessWarning(report string) (patterns, warning, rest string) {
+	const prefix = "[harness: subagent output matched instruction-shaped pattern(s):"
+	if !strings.HasPrefix(report, prefix) {
+		return "", "", report
+	}
+	end := strings.Index(report, "]")
+	if end < 0 {
+		return "", "", report
+	}
+	warning = report[1:end]
+	patterns, _, _ = strings.Cut(strings.TrimSpace(report[len(prefix):end]), ".")
+	return strings.TrimSpace(patterns), warning, strings.TrimSpace(report[end+1:])
+}
+
 // splitAppNotes separates <system-reminder> blocks at the start of a
 // prompt, which the desktop app adds, from what the user typed.
 func splitAppNotes(text string) (notes, user string) {
