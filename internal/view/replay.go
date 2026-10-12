@@ -213,6 +213,17 @@ func toolSummary(tool string, in json.RawMessage) string {
 		return str("url")
 	case "WebSearch":
 		return str("query")
+	case "SubagentHandback":
+		if s := str("message"); s != "" {
+			return s
+		}
+	case "mcp__ccd_directory__change_directory": // the desktop app moving the session (F-012)
+		return "move the session to " + str("path")
+	case "mcp__ccd_directory__request_directory":
+		if p := str("path"); p != "" {
+			return "ask the user for access to " + p
+		}
+		return "ask the user to pick a folder"
 	}
 	return compact(in)
 }
@@ -424,8 +435,10 @@ func cut(s string, n int) string {
 	return s[:n]
 }
 
-// SessionTable prints the session list.
-func SessionTable(w io.Writer, rows []Summary, loc *time.Location) error {
+// SessionTable prints the session list. Session ids are cut to 8
+// characters, which replay, verify, report, and export accept as a
+// prefix, unless fullIDs is set.
+func SessionTable(w io.Writer, rows []Summary, loc *time.Location, fullIDs bool) error {
 	if loc == nil {
 		loc = time.Local
 	}
@@ -433,8 +446,8 @@ func SessionTable(w io.Writer, rows []Summary, loc *time.Location) error {
 		_, err := fmt.Fprintln(w, "no sessions recorded yet")
 		return err
 	}
-	_, err := fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5s  %5s  %4s  %6s  %-18s  %-20s  %-30s  %s\n",
-		"STARTED", "LAST", "STATUS", "TURNS", "TOOLS", "HIGH", "NOTICE", "MODEL", "USER@HOST", "DIR", "SESSION")
+	_, err := fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5s  %5s  %-8s  %6s  %-18s  %-20s  %-30s  %s\n",
+		"STARTED", "LAST", "STATUS", "TURNS", "TOOLS", "H/M/L", "NOTICE", "MODEL", "USER@HOST", "DIR", "SESSION")
 	for _, s := range rows {
 		if err != nil {
 			return err
@@ -451,12 +464,20 @@ func SessionTable(w io.Writer, rows []Summary, loc *time.Location) error {
 		default:
 			model = s.Models[len(s.Models)-1] + "+"
 		}
-		// Every column but the times comes from captured data.
+		dir := s.LastCwd // where the session is now, after any move
+		if dir == "" {
+			dir = s.Cwd
+		}
+		id := s.Session
+		if !fullIDs {
+			id = cut(id, 8)
+		}
+		sev := fmt.Sprintf("%d/%d/%d", s.Severity[0], s.Severity[1], s.Severity[2])
+		// Every column but the times and counts comes from captured data.
 		n := func(v string) string { return neutralize(v, false) }
-		s.Status, s.User, s.Host, s.Cwd, s.Session, model = n(s.Status), n(s.User), n(s.Host), n(s.Cwd), n(s.Session), n(model)
-		_, err = fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5d  %5d  %4d  %6d  %-18s  %-20s  %-30s  %s\n",
-			s.Started.In(loc).Format("2006-01-02 15:04"), last, cut(s.Status, 16), s.Turns, s.ToolCalls, s.Highlight,
-			s.Notices, cut(model, 18), cut(s.User+"@"+s.Host, 20), cutLeft(s.Cwd, 30), s.Session)
+		_, err = fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5d  %5d  %-8s  %6d  %-18s  %-20s  %-30s  %s\n",
+			s.Started.In(loc).Format("2006-01-02 15:04"), last, cut(n(s.Status), 16), s.Turns, s.ToolCalls, sev,
+			s.Notices, cut(n(model), 18), cut(n(s.User+"@"+s.Host), 20), cutLeft(n(dir), 30), n(id))
 	}
 	return err
 }

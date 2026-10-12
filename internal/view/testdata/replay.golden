@@ -18,6 +18,6 @@ SESSION abc123  jdoe@ws-204  /repo  claude-code 2.1.295 -> 2.1.296  model: claud
 14:00:41  NOTICE    t2  [WARNING] safeguards flagged this (cyber): claude-sonnet-5-5 -> claude-sonnet-5 for...
 14:00:41  PROMPT    t2  (injected by the harness) "Your response above was stopped by a safety classifier."
 14:00:42  TOOL      t2  Bash (no hook ran)  sleep 90 && echo done  ->  error: Blocked: sleep...
-14:00:44  PROMPT    t3  (injected by the harness) "<task-notification>build finished</task-notification>"
+14:00:44  PROMPT    t2  (injected by the harness) "<task-notification>build finished</task-notification>"
 14:00:45  TURN END  t2  
 14:00:50  END       -   user_exit
