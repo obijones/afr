@@ -14,7 +14,7 @@ before any hook ran, and messages the harness injected. `afr verify` checks the 
 ## Review sessions
 
 ```sh
-afr sessions                 # most recent first: status, turns, tool calls, user@host, dir
+afr sessions                 # most recent first: status, turns, tools, highlights (high/medium/low), dir, id
 afr replay 3394              # one session as a conversation (full id or unique prefix)
 afr replay --full 3394       # with complete prompts, replies, tool inputs, and outputs
 afr replay -o s.txt 3394     # write it to a file (UTF-8), for sharing or review
@@ -30,7 +30,13 @@ the session ended. Tool calls the harness handled without running a hook are mar
 `(no hook ran)`; messages the harness injected are marked as such. Failed calls show the
 error, and calls auto mode refused show `denied by auto mode` with the reason. Claude
 Code's own background tasks (prompt suggestions, the session recap) appear as `HELPER`
-lines, and a prompt sent from a suggestion is marked `(accepted suggestion)`. On Windows,
+lines, and a prompt sent from a suggestion is marked `(accepted suggestion)`. Turns are
+numbered by the prompts a person sent. In the Claude desktop app, the note the app adds
+before a prompt is shown separately (`app note added`), and a subagent's report that the
+harness delivers as a prompt appears as a `HANDBACK` line, not a turn; it is recognized
+only when its sender is a subagent of the same session. `afr sessions` shows the first 8
+characters of each id, which every command accepts (`--full-ids` for whole ids), and the
+folder a session is in now, after any move. On Windows,
 use `-o` rather than piping to `Out-File`: Windows PowerShell 5.1 re-decodes piped text
 with the console code page and garbles anything outside ASCII. Harness notices, such
 as a safety classifier stopping a response and switching models, appear as `NOTICE` lines

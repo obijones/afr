@@ -60,6 +60,7 @@ type reportSession struct {
 	User        string       `json:"user"`
 	Host        string       `json:"host"`
 	Cwd         string       `json:"cwd"`
+	StartCwd    string       `json:"start_cwd,omitempty"`
 	Agent       string       `json:"agent"`
 	Models      []string     `json:"models"`
 	Status      string       `json:"status"`
@@ -138,6 +139,9 @@ func Report(w io.Writer, sessions []ReportSession, o ReportOptions) error {
 			Status: n(sum.Status), Open: sum.Status == "open",
 			Turns: sum.Turns, Tools: sum.ToolCalls, Notices: sum.Notices,
 			Integrity: n(s.Integrity), IntegrityOK: s.OK, Current: m.CurrentCount,
+		}
+		if sum.LastCwd != "" && sum.LastCwd != sum.Cwd { // moved during the session
+			rs.Cwd, rs.StartCwd = n(sum.LastCwd), n(sum.Cwd)
 		}
 		for _, l := range m.Lines {
 			rl := reportLine{
