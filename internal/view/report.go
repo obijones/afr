@@ -65,6 +65,9 @@ type reportSession struct {
 	Models      []string     `json:"models"`
 	Status      string       `json:"status"`
 	Open        bool         `json:"open"`
+	App         string       `json:"app,omitempty"`  // desktop, cli, or empty when unknown
+	Idle        string       `json:"idle,omitempty"` // a desktop session without an end: time since its last event
+	Late        string       `json:"late,omitempty"` // when afr started recording a session already under way
 	Turns       int          `json:"turns"`
 	Tools       int          `json:"tools"`
 	Failed      int          `json:"failed"`
@@ -136,9 +139,17 @@ func Report(w io.Writer, sessions []ReportSession, o ReportOptions) error {
 			Date:   sum.Started.In(o.Loc).Format("2006-01-02"),
 			Start:  sum.Started.In(o.Loc).Format("15:04:05"),
 			Last:   sum.LastSeen.In(o.Loc).Format("2006-01-02 15:04:05"),
-			Status: n(sum.Status), Open: sum.Status == "open",
+			Status: n(sum.Status), Open: sum.Status == "open", App: n(sum.App),
 			Turns: sum.Turns, Tools: sum.ToolCalls, Notices: sum.Notices,
 			Integrity: n(s.Integrity), IntegrityOK: s.OK, Current: m.CurrentCount,
+		}
+		// The app keeps desktop conversations open, so no end usually means
+		// idle, not cut off (F-010); only other sessions are flagged as open.
+		if rs.Open && sum.App == "desktop" {
+			rs.Open, rs.Idle = false, strings.TrimPrefix(StatusAt(sum, o.Generated), "idle ")
+		}
+		if sum.Late {
+			rs.Late = sum.Joined.In(o.Loc).Format("15:04:05")
 		}
 		if sum.LastCwd != "" && sum.LastCwd != sum.Cwd { // moved during the session
 			rs.Cwd, rs.StartCwd = n(sum.LastCwd), n(sum.Cwd)

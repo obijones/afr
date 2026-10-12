@@ -45,6 +45,9 @@ func Replay(w io.Writer, events []schema.Event, integrity string, o Options) err
 	if len(sum.Versions) > 0 {
 		agent += " " + strings.Join(sum.Versions, " -> ")
 	}
+	if sum.App != "" {
+		agent += " (" + sum.App + ")"
+	}
 	r := &replayer{w: w, o: o}
 	// The header is captured data too (folder, user, models, a verifier
 	// error), so it is neutralized like every line.
@@ -446,8 +449,8 @@ func SessionTable(w io.Writer, rows []Summary, loc *time.Location, fullIDs bool)
 		_, err := fmt.Fprintln(w, "no sessions recorded yet")
 		return err
 	}
-	_, err := fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5s  %5s  %-8s  %6s  %-18s  %-20s  %-30s  %s\n",
-		"STARTED", "LAST", "STATUS", "TURNS", "TOOLS", "H/M/L", "NOTICE", "MODEL", "USER@HOST", "DIR", "SESSION")
+	_, err := fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5s  %5s  %-8s  %6s  %-7s  %-18s  %-20s  %-30s  %s\n",
+		"STARTED", "LAST", "STATUS", "TURNS", "TOOLS", "H/M/L", "NOTICE", "APP", "MODEL", "USER@HOST", "DIR", "SESSION")
 	for _, s := range rows {
 		if err != nil {
 			return err
@@ -475,11 +478,38 @@ func SessionTable(w io.Writer, rows []Summary, loc *time.Location, fullIDs bool)
 		sev := fmt.Sprintf("%d/%d/%d", s.Severity[0], s.Severity[1], s.Severity[2])
 		// Every column but the times and counts comes from captured data.
 		n := func(v string) string { return neutralize(v, false) }
-		_, err = fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5d  %5d  %-8s  %6d  %-18s  %-20s  %-30s  %s\n",
-			s.Started.In(loc).Format("2006-01-02 15:04"), last, cut(n(s.Status), 16), s.Turns, s.ToolCalls, sev,
-			s.Notices, cut(n(model), 18), cut(n(s.User+"@"+s.Host), 20), cutLeft(n(dir), 30), n(id))
+		app := s.App
+		if app == "" {
+			app = "-"
+		}
+		_, err = fmt.Fprintf(w, "%-16s  %-8s  %-16s  %5d  %5d  %-8s  %6d  %-7s  %-18s  %-20s  %-30s  %s\n",
+			s.Started.In(loc).Format("2006-01-02 15:04"), last, cut(n(StatusAt(s, time.Now())), 16), s.Turns, s.ToolCalls, sev,
+			s.Notices, cut(n(app), 7), cut(n(model), 18), cut(n(s.User+"@"+s.Host), 20), cutLeft(n(dir), 30), n(id))
 	}
 	return err
+}
+
+// StatusAt is a session's status as of now. A desktop session without an
+// end is normally just idle, since the app keeps conversations open
+// (docs/findings.md F-010), so it shows how long since its last event.
+func StatusAt(s Summary, now time.Time) string {
+	if s.Status != "open" || s.App != "desktop" {
+		return s.Status
+	}
+	return "idle " + age(now.Sub(s.LastSeen))
+}
+
+// age rounds a duration to its largest unit: 40s, 12m, 3h, 2d.
+func age(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", max(int(d.Seconds()), 0))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
 // cutLeft keeps the end of a path, which is the part that identifies it.

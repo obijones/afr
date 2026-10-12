@@ -45,6 +45,8 @@ type State struct {
 	Version        string          `json:"version"`                  // latest harness version seen in the transcript
 	Workspace      string          `json:"workspace"`                // first working directory seen (older state; see Track)
 	Track          rules.Workspace `json:"track"`                    // workspace folders for the rules: root, moves, scratchpad
+	App            string          `json:"app,omitempty"`            // entrypoint seen in the transcript: claude-desktop, cli, ...
+	AppLogged      string          `json:"app_logged,omitempty"`     // entrypoint last written to the log
 	Mode           string          `json:"mode"`                     // latest permission mode seen, for rules
 	RulesProblems  string          `json:"rules_problems,omitempty"` // hash of the last customer-rule problems logged
 
@@ -132,6 +134,11 @@ func Record(dataDir string, c *collect.Converted) error {
 		// replay knows it too without the payload.
 		if c.Scratchpad != "" && c.Scratchpad != st.Track.Scratchpad && len(all) > 0 {
 			all[0].ScratchpadDir = c.Scratchpad
+		}
+		// The same for the app that runs the session, once the transcript
+		// names it.
+		if st.App != "" && st.App != st.AppLogged && len(all) > 0 {
+			all[0].Entrypoint, st.AppLogged = st.App, st.App
 		}
 		st.highlight(all, dataDir)
 		if err := w.Append(all); err != nil {
@@ -237,6 +244,9 @@ func (st *State) recover(recs []transcript.Record, base schema.Event, reply stri
 		if r.Cwd != "" {
 			e.Cwd = r.Cwd // where the session was then, which can differ from the hook's folder now
 		}
+		if r.App != "" {
+			st.App = r.App
+		}
 		e.TurnID, e.PromptRef = st.PromptID, ""
 		if st.PromptID != "" {
 			e.PromptRef = e.Session + "#" + st.PromptID
@@ -275,9 +285,11 @@ func (st *State) recover(recs []transcript.Record, base schema.Event, reply stri
 				continue
 			}
 			// A message the harness injected (such as a background task
-			// notification) that never went through the prompt hook.
+			// notification) that never went through the prompt hook, or a
+			// prompt from before afr's hooks were active (F-011).
 			e.EventType = schema.PromptSubmit
 			e.Content = text(r.Text)
+			e.Meta = r.Meta
 		case transcript.Text:
 			if i := slices.Index(st.PendingReplies, hash(r.Text)); i >= 0 {
 				st.PendingReplies = slices.Delete(st.PendingReplies, i, i+1) // already logged from Stop
@@ -388,6 +400,9 @@ func (st *State) seedFromLog(path string) error {
 			st.seen[e.TranscriptUUID] = true
 		}
 		st.Track.Observe(e)
+		if e.Entrypoint != "" {
+			st.App, st.AppLogged = e.Entrypoint, e.Entrypoint
+		}
 		switch e.EventType {
 		case schema.ToolCall:
 			// Logged by a hook or already recovered: either way, skip it

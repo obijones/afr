@@ -99,14 +99,21 @@ type Summary struct {
 	Models    []string // models that wrote replies, in order of first use
 	Versions  []string // harness versions seen, in order
 	Notices   int      // harness notices: safeguard stops, model fallbacks, version changes
+	App       string   // the app that ran the session: desktop, cli, or empty when unknown
+	Late      bool     // afr joined after the session started: earlier events came from the transcript
+	Joined    time.Time
 }
 
 // Summarize computes a session's summary from its events.
 func Summarize(events []schema.Event) Summary {
 	var s Summary
 	open := false
-	agents := subagentIDs(events)
+	sc := newSessionCtx(events)
+	s.Late, s.Joined = sc.joinedLate(events), sc.joined
 	for _, e := range InTimeOrder(events) {
+		if e.Entrypoint != "" {
+			s.App = appName(e.Entrypoint)
+		}
 		if s.Session == "" {
 			s.Session, s.Started = e.Session, e.TS
 		}
@@ -151,7 +158,7 @@ func Summarize(events []schema.Event) Summary {
 				s.Status += " (" + e.EndReason + ")"
 			}
 		case schema.PromptSubmit:
-			if isUserPrompt(e, agents) { // sent by a person; harness-delivered messages are not turns
+			if sc.isUserPrompt(e) { // sent by a person; harness-delivered messages are not turns
 				s.Turns++
 			}
 		case schema.HarnessNotice:
@@ -162,6 +169,9 @@ func Summarize(events []schema.Event) Summary {
 	}
 	if open || s.Status == "" {
 		s.Status = "open"
+	}
+	if s.App == "" {
+		s.App = inferApp(events) // logs recorded before afr stored the app
 	}
 	return s
 }

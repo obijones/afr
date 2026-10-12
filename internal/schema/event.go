@@ -74,8 +74,10 @@ type Event struct {
 	PermissionMode string  `json:"permission_mode,omitempty"` // session.start, prompt.submit: the harness permission mode
 	EndReason      string  `json:"end_reason,omitempty"`      // session.end
 	TranscriptPath string  `json:"transcript_path,omitempty"`
-	ScratchpadDir  string  `json:"scratchpad_dir,omitempty"` // the harness's per-session scratch folder, when it changes
-	Notice         *Notice `json:"notice,omitempty"`         // harness.notice
+	ScratchpadDir  string  `json:"scratchpad_dir,omitempty"`
+	Entrypoint     string  `json:"entrypoint,omitempty"` // which app ran the session (claude-desktop, cli), when first learned or changed
+	Meta           bool    `json:"meta,omitempty"`       // a prompt the harness wrote itself (transcript isMeta), not the user // the harness's per-session scratch folder, when it changes
+	Notice         *Notice `json:"notice,omitempty"`     // harness.notice
 
 	Content    *Content    `json:"content,omitempty"`
 	Highlights []Highlight `json:"highlights,omitempty"`
