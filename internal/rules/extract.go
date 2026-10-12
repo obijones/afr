@@ -9,12 +9,36 @@ import (
 // input is a tool call reduced to what rules match on.
 type input struct {
 	tool    string
-	command string    // shell command text, if the tool runs one
-	segs    []segment // the command split into simple commands
-	reads   []string  // paths read (normalized)
-	writes  []string  // paths written: file tools, redirects, tee, cp, ...
-	content string    // text written by a file tool
-	byTool  bool      // writes came from a file-writing tool
+	command string            // shell command text, if the tool runs one
+	segs    []segment         // the command split into simple commands
+	reads   []string          // paths read (normalized)
+	writes  []string          // paths written: file tools, redirects, tee, cp, ...
+	content string            // text written by a file tool
+	byTool  bool              // writes came from a file-writing tool
+	shown   map[string]string // normalized path -> the path as written, for details
+}
+
+// show returns a normalized path as the agent wrote it (case and
+// separators kept), for a highlight's detail.
+func (in input) show(p string) string {
+	if v, ok := in.shown[p]; ok {
+		return v
+	}
+	return p
+}
+
+// path normalizes p for matching and remembers how to show it.
+func (in *input) path(p, cwd string, c *Context) string {
+	n := normPath(p, cwd, c)
+	if n != "" {
+		if in.shown == nil {
+			in.shown = map[string]string{}
+		}
+		if _, ok := in.shown[n]; !ok {
+			in.shown[n] = displayPath(p, cwd, c)
+		}
+	}
+	return n
 }
 
 // Tools that write a file named by file_path or notebook_path.
@@ -36,9 +60,14 @@ func parseInput(tool string, raw json.RawMessage, cwd string, c *Context) input 
 	if cmd := str("command"); cmd != "" {
 		in.command = cmd
 		in.segs = splitCommand(cmd, 0)
+		vars := map[string]string{} // PowerShell variables assigned a path earlier in the command
 		for _, s := range in.segs {
+			if name, value, ok := psAssign(s, vars); ok {
+				vars[name] = value
+				continue
+			}
 			for _, t := range s.writeTargets() {
-				in.writes = append(in.writes, normPath(t, cwd, c))
+				in.writes = append(in.writes, in.path(expandVars(t, vars), cwd, c))
 			}
 		}
 	}
@@ -49,7 +78,7 @@ func parseInput(tool string, raw json.RawMessage, cwd string, c *Context) input 
 	switch {
 	case writeTools[tool]:
 		if p != "" {
-			in.writes = append(in.writes, normPath(p, cwd, c))
+			in.writes = append(in.writes, in.path(p, cwd, c))
 			in.byTool = true
 		}
 		var b strings.Builder
@@ -70,7 +99,7 @@ func parseInput(tool string, raw json.RawMessage, cwd string, c *Context) input 
 	case readTools[tool]:
 		for _, k := range []string{"file_path", "path", "pattern"} {
 			if s := str(k); s != "" && (k != "pattern" || tool == "Glob") {
-				in.reads = append(in.reads, normPath(s, cwd, c))
+				in.reads = append(in.reads, in.path(s, cwd, c))
 			}
 		}
 	}
@@ -81,6 +110,24 @@ func parseInput(tool string, raw json.RawMessage, cwd string, c *Context) input 
 // forward slashes, ~ and home variables expanded, relative paths joined
 // to cwd, cleaned, and lowercased when it is a Windows path.
 func normPath(p, cwd string, c *Context) string {
+	p = cleanPath(p, cwd, c)
+	if isWindowsPath(p) {
+		p = strings.ToLower(p)
+	}
+	return p
+}
+
+// displayPath is normPath for showing: case kept, and backslashes for a
+// Windows path.
+func displayPath(p, cwd string, c *Context) string {
+	p = cleanPath(p, cwd, c)
+	if isWindowsPath(p) {
+		p = strings.ReplaceAll(p, "/", `\`)
+	}
+	return p
+}
+
+func cleanPath(p, cwd string, c *Context) string {
 	p = strings.Trim(strings.TrimSpace(p), `"'`)
 	if p == "" {
 		return ""
@@ -114,10 +161,64 @@ func normPath(p, cwd string, c *Context) string {
 	} else {
 		p = path.Clean(p)
 	}
-	if isWindowsPath(p) {
-		p = strings.ToLower(p)
-	}
 	return p
+}
+
+// psAssign reads a PowerShell assignment of a path to a variable:
+// $p = 'C:\x', or $p = Join-Path <parent> <child>. Variables assigned
+// earlier are expanded in the value.
+func psAssign(s segment, vars map[string]string) (name, value string, ok bool) {
+	w := s.words
+	if len(w) == 0 || !strings.HasPrefix(w[0], "$") || strings.HasPrefix(strings.ToLower(w[0]), "$env:") {
+		return "", "", false
+	}
+	var rest []string
+	switch {
+	case len(w) >= 2 && w[1] == "=":
+		name, rest = w[0], w[2:]
+	case strings.Index(w[0], "=") > 1:
+		i := strings.Index(w[0], "=")
+		name, rest = w[0][:i], append([]string{w[0][i+1:]}, w[1:]...)
+	default:
+		return "", "", false
+	}
+	switch {
+	case len(rest) >= 3 && strings.EqualFold(rest[0], "join-path"):
+		args := rest[1:]
+		parent, child := flagValue(args, "-Path"), flagValue(args, "-ChildPath")
+		pos := positional(args)
+		if parent == "" && len(pos) > 0 {
+			parent, pos = pos[0], pos[1:]
+		}
+		if child == "" && len(pos) > 0 {
+			child = pos[0]
+		}
+		if parent == "" || child == "" {
+			return "", "", false
+		}
+		value = expandVars(parent, vars) + `\` + expandVars(child, vars)
+	case len(rest) == 1 && rest[0] != "":
+		value = expandVars(rest[0], vars)
+	default:
+		return "", "", false
+	}
+	return strings.ToLower(name), value, true
+}
+
+// expandVars replaces a leading PowerShell variable assigned earlier
+// ($p or $p\more) with its value.
+func expandVars(t string, vars map[string]string) string {
+	if !strings.HasPrefix(t, "$") || len(vars) == 0 {
+		return t
+	}
+	end := len(t)
+	if i := strings.IndexAny(t, `\/`); i > 0 {
+		end = i
+	}
+	if v, ok := vars[strings.ToLower(t[:end])]; ok {
+		return v + t[end:]
+	}
+	return t
 }
 
 // hasDrive reports a Windows drive prefix such as C: or C:/.

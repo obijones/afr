@@ -21,6 +21,7 @@ type claudePayload struct {
 	SessionID            string          `json:"session_id"`
 	PromptID             string          `json:"prompt_id"`
 	TranscriptPath       string          `json:"transcript_path"`
+	ScratchpadDir        string          `json:"scratchpad_dir"`
 	Cwd                  string          `json:"cwd"`
 	Source               string          `json:"source"`
 	Reason               string          `json:"reason"`
@@ -51,6 +52,7 @@ type Converted struct {
 	Base           schema.Event   // shared fields, a template for recovered events
 	TranscriptPath string
 	ReadTranscript bool   // this hook is a point to catch up on the transcript
+	Scratchpad     string // the harness's per-session scratch folder, if the payload names one
 	Reply          string // final reply text carried by Stop, if any
 }
 
@@ -83,7 +85,7 @@ func FromClaudeCode(payload []byte, now time.Time, id Identity) (*Converted, err
 		base.PromptRef = p.SessionID + "#" + p.PromptID
 	}
 
-	c := &Converted{Base: base, TranscriptPath: p.TranscriptPath}
+	c := &Converted{Base: base, TranscriptPath: p.TranscriptPath, Scratchpad: p.ScratchpadDir}
 	c.Base.EventID = ""
 	c.Base.HookEvent = ""
 

@@ -48,6 +48,13 @@ itself and told Claude through a note added to the next prompt (F-008).
 3. A session that afr joined late (F-011) has the opposite problem: its workspace is the
    final folder, so writes in the original scratch folder were flagged.
 
+**Fixed** on branch `fix/desktop-rules`: the rules' workspace now includes folders the app
+moved the session to (a successful `change_directory`) and the session's scratchpad
+(`scratchpad_dir`, recorded once per session), tracked the same way when recording and in
+replay. Recovered transcript events carry the folder the session was in at the time, so a
+session afr joins late is judged against its original folder. Files the app copies itself
+stay invisible.
+
 ## F-011: Hook changes reach sessions that are already running (2026-10-11)
 
 **What we saw.** Desktop conversation `fcb60a58` started at 11:41, before afr's hooks were in
@@ -96,6 +103,10 @@ hand-back only when its `from` id matches a subagent of the same session (a user
 the same text), label it as delivered by the harness, and show the hand-back message as the
 subagent's result.
 
+**Fixed** in PR #19: hand-backs and task notices show as `HANDBACK` lines, are not turns,
+and are recognized only by a matching subagent id; a background subagent's result comes from
+`SubagentHandback`.
+
 ## F-008: The desktop app adds a long note to the user's prompt (2026-10-11)
 
 **What we saw.** In desktop sessions started without a project folder, the `prompt` field of
@@ -109,6 +120,9 @@ the files the app copied.
 typed. Fix: summarize the user's words and show the note separately as harness-added text;
 keep the full prompt in the log. The note is also evidence of what context the app gave
 the model, including other project folders on the machine, so it stays in the record.
+
+**Fixed** in PR #19: the replay shows what the user typed and the app's note separately
+(`app note added`); the full prompt stays in the log.
 
 ## F-007: Withdrawn: a desktop conversation title looked carried over from a deleted one (2026-10-11)
 

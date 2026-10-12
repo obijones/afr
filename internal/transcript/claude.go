@@ -55,6 +55,7 @@ type Record struct {
 	Model    string // assistant records: the model that produced them
 	Version  string // the harness version that wrote the record
 	Meta     bool   // a message the harness wrote into the conversation itself
+	Cwd      string // the session's working folder when the record was written
 	Notice   *NoticeInfo
 }
 
@@ -143,6 +144,7 @@ type line struct {
 	RequestedModel string    `json:"requestedModel"`
 	Version        string    `json:"version"`
 	IsMeta         bool      `json:"isMeta"`
+	Cwd            string    `json:"cwd"`
 
 	// system records
 	Subtype               string          `json:"subtype"`
@@ -202,7 +204,7 @@ func parseLine(b []byte) []Record {
 	if json.Unmarshal(b, &l) != nil || l.IsSidechain {
 		return nil
 	}
-	base := Record{UUID: l.UUID, TS: l.Timestamp, PromptID: l.PromptID, Version: l.Version, Meta: l.IsMeta}
+	base := Record{UUID: l.UUID, TS: l.Timestamp, PromptID: l.PromptID, Version: l.Version, Meta: l.IsMeta, Cwd: l.Cwd}
 	if l.Type == "system" {
 		return systemNotice(l, base)
 	}
