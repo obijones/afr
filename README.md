@@ -74,7 +74,7 @@ see them.
 
 ## Highlights
 
-Fifteen rules tag events that deserve a reviewer's attention, such as a credential file
+Sixteen rules tag events that deserve a reviewer's attention, such as a credential file
 read, a download piped to a shell, a write outside the workspace, or the agent editing its
 own hooks. Each highlight has a severity (high, medium, or low) meaning review priority;
 nothing is ever blocked. Highlights are evaluated as events are recorded and stored in the
