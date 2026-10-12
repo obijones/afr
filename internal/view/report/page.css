@@ -40,6 +40,7 @@ main{padding:0 16px 48px}
 .k-PROMPT{color:var(--acc)!important}.k-AI{color:var(--ok)!important}.k-TOOL{color:var(--fg)!important}
 .k-HELPER,.k-HANDBACK,.k-NOTICE,.k-NOTE{color:var(--md)!important}
 .fail{color:var(--hi)}
+.badge.link{cursor:pointer;text-decoration:underline dotted}
 .deny{color:var(--hi);font-weight:700}
 .badge{display:inline-block;font:600 11px/1.6 system-ui,sans-serif;padding:0 6px;border-radius:9px;border:1px solid currentColor;margin-right:4px;white-space:nowrap}
 .s-high{color:var(--hi)}.s-medium{color:var(--md)}.s-low{color:var(--lo)}

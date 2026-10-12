@@ -478,3 +478,28 @@ func TestRecordFollowsDesktopMove(t *testing.T) {
 		t.Errorf("scratchpad recorded %d times, want once", scratchpads)
 	}
 }
+
+// The app that runs a session is written once, and not again after the
+// state is rebuilt from the log.
+func TestEntrypointRecordedOnce(t *testing.T) {
+	dir := t.TempDir()
+	tpath := filepath.Join(dir, "t.jsonl")
+	ls := lines(t)
+	writeTranscript(t, tpath, ls[:len(ls)/2])
+	mustRecord(t, dir, hook(tpath, schema.SessionEnd, "", "", "", true))
+	os.Remove(statePath(dir, sid))
+	writeTranscript(t, tpath, ls)
+	mustRecord(t, dir, hook(tpath, schema.SessionEnd, "", "", "", true))
+	n := 0
+	for _, e := range logEvents(t, dir) {
+		if e.Entrypoint != "" {
+			n++
+			if e.Entrypoint != "sdk-cli" {
+				t.Errorf("entrypoint %q", e.Entrypoint)
+			}
+		}
+	}
+	if n != 1 {
+		t.Errorf("entrypoint written %d times, want once", n)
+	}
+}

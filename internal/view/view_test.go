@@ -462,3 +462,68 @@ func TestDesktopSessionLines(t *testing.T) {
 		t.Errorf("summary: turns=%d cwd=%q last=%q", s.Turns, s.Cwd, s.LastCwd)
 	}
 }
+
+// A session afr joins at its end (hooks registered while it ran,
+// docs/findings.md F-011): everything comes from the transcript. The
+// user's prompts are the user's, they count as turns, calls are not
+// marked "(no hook ran)", and a NOTE marks where recording began.
+func TestLateJoinedSession(t *testing.T) {
+	dir := t.TempDir()
+	tpath := filepath.Join(dir, "t.jsonl")
+	data, err := os.ReadFile("../../testdata/claude-code/2.1.295/transcript.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(tpath, data, 0o600)
+	recs, _, _ := transcript.ReadFrom(tpath, 0, 16<<20)
+	userPrompts := 0
+	for _, r := range recs {
+		if r.Kind == transcript.Prompt && !r.Meta && !harnessText(r.Text) {
+			userPrompts++
+		}
+	}
+	const sid = "3021b5c9-9be8-4132-a458-73646480a76f"
+	base := schema.Event{Schema: schema.Version, Session: sid, User: "user", Host: "host", Agent: "claude-code", Cwd: "/home/user/p"}
+	end := base
+	end.EventType, end.EndReason, end.TS = schema.SessionEnd, "other", recs[len(recs)-1].TS.Add(time.Minute)
+	end.EventID = schema.NewEventID(end.TS)
+	if err := session.Record(dir, &collect.Converted{Events: []schema.Event{end}, Base: base, TranscriptPath: tpath, ReadTranscript: true}); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := Load(store.LogPath(dir, sid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := Summarize(evs)
+	if !s.Late || s.Turns != userPrompts || userPrompts == 0 || s.App != "sdk-cli" {
+		t.Errorf("summary late=%v turns=%d (want %d) app=%q", s.Late, s.Turns, userPrompts, s.App)
+	}
+	var b bytes.Buffer
+	if err := Replay(&b, evs, "ok", Options{Loc: time.UTC, Width: 200}); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	note := strings.Index(out, "NOTE      -   afr started recording here")
+	if note < 0 || strings.Contains(out[:note], "(no hook ran)") || !strings.Contains(out, "PROMPT    t1  \"") {
+		t.Errorf("late-joined replay wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "(sdk-cli)") {
+		t.Errorf("header does not name the app:\n%s", out)
+	}
+}
+
+func TestDesktopIdleStatus(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	s := Summary{Status: "open", App: "desktop", LastSeen: now.Add(-3*time.Hour - 10*time.Minute)}
+	if got := StatusAt(s, now); got != "idle 3h" {
+		t.Errorf("desktop open = %q, want idle 3h", got)
+	}
+	s.App = "cli"
+	if got := StatusAt(s, now); got != "open" {
+		t.Errorf("cli open = %q, want open", got)
+	}
+	scratch := []schema.Event{{Cwd: `C:\Users\u\AppData\Roaming\Claude\scratch-workspaces\a\b\scratch-1`}}
+	if inferApp(scratch) != "desktop" || inferApp([]schema.Event{{Cwd: `C:\Users\u\proj`}}) != "" {
+		t.Error("desktop not inferred from a scratch-workspaces folder, or inferred elsewhere")
+	}
+}
