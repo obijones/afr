@@ -3,23 +3,126 @@
 Behavior of AI agents and harnesses that afr testing revealed, with evidence and what it
 means for afr. Newest first.
 
-## F-007: A new desktop conversation kept the deleted conversation's title (2026-10-11)
+## F-013: Desktop app differences that matter for review (2026-10-11)
 
-**What we saw.** On Windows, the user asked the Claude desktop app (Code tab) for
-productivity suggestions, then deleted that conversation and started a new one about lucid
-dreaming. The new conversation's transcript (`fcb60a58`) records `custom-title` and
-`agent-name` as "Productivity suggestions" from its first lines to its last, 17 times,
-although no prompt in it is about productivity.
+Round 3 tested the Claude desktop app's Code tab on Windows with hooks in user settings.
 
-**What it means for afr.** Nothing to fix; afr does not record titles. A reviewer should not
-trust a desktop conversation's title to describe it. Unexplained: the deleted conversation
-(`868903a5`) left only a `desktop-released.json` marker, so we cannot tell whether the title
-was carried over or generated from a stale prompt.
+| What | Desktop Code tab | CLI |
+| --- | --- | --- |
+| Claude Code version | bundled 2.1.295 | 2.1.296 |
+| `model` in `SessionStart` | absent | present |
+| Model used | the app's own picker | `settings.json` `model` |
+| Permission mode seen | `auto` | as configured |
+| Working folder | a fresh scratch folder per conversation unless the user picks one | the current folder |
+| Chat tab | not Claude Code, never runs hooks | n/a |
+
+The first real `PermissionDenied` payload came from desktop: an environment variable dump,
+`reason: "[Credential Materialization]"`, with the documented fields (`tool_name`,
+`tool_input`, `tool_use_id`, `reason`). afr recorded it as `denied by auto mode`; it is now a
+test fixture (`testdata/claude-code/2.1.295-windows-desktop/`), which closes F-004's open item.
+
+Payloads also carry fields afr does not record yet: `effort.level` on most events,
+`mcp_server` on tool calls, `session_title` on prompts and resumed starts, and on a resumed
+start `context_tokens`, `estimated_cache_write_usd`, and `seconds_since_last_response`.
+
+**What it means for afr.** The starting model of a desktop session comes only from the
+transcript. Coverage claims must say "Code tab", never "Claude desktop". Collecting desktop
+transcripts on Windows needs long-path support: subagent transcript paths under a
+scratch-workspace project folder pass 260 characters, and Windows PowerShell 5.1
+`Compress-Archive` fails on them with a misleading permission error (`tar` works).
+
+## F-012: Desktop folder moves are a tool call, and the app copies files itself (2026-10-11)
+
+**What we saw.** Asked to keep the work, Claude called
+`mcp__ccd_directory__change_directory` with `{"path": "C:\\Users\\<user>\\Documents\\afr-d5"}`
+(`mcp_server: {"name": "ccd_directory", "source": "sdk"}`). Its result says the working
+folder moves when the turn ends. The app then copied the scratch files into the new folder
+itself and told Claude through a note added to the next prompt (F-008).
+
+**What it means for afr.**
+
+1. The move is visible in the hooks, no transcript needed: afr can make the new folder part
+   of the workspace when that call succeeds. Today every write there is flagged
+   `fs.write_outside_workspace` (medium), a false positive.
+2. Files the app copies are not tool calls, so afr has no record of them being created.
+3. A session that afr joined late (F-011) has the opposite problem: its workspace is the
+   final folder, so writes in the original scratch folder were flagged.
+
+## F-011: Hook changes reach sessions that are already running (2026-10-11)
+
+**What we saw.** Desktop conversation `fcb60a58` started at 11:41, before afr's hooks were in
+user settings. When the app exited at 16:26, its `SessionEnd` hook ran afr, and afr
+recovered the whole conversation from the transcript: 28 tool calls, replies, and 2
+highlights. The running process had picked up the new hook settings.
+
+**What it means for afr.**
+
+1. Good for rollout: sessions already running when afr is installed still get recorded, at
+   their next hook event.
+2. Security: if adding hooks reaches running sessions, removing them presumably does too
+   (not tested). Managed settings are the answer for organizations.
+3. Gap: afr labels everything recovered without a hook as harness activity, so this
+   session's real prompts show as "injected by the harness", its tool calls as "no hook
+   ran", and it counts 0 turns. Recovered events earlier than the first hook event should be
+   labeled as recorded late, with real prompts counted as turns.
+
+## F-010: How desktop sessions end and resume (2026-10-11)
+
+| Action in the desktop app | What the hooks recorded |
+| --- | --- |
+| `/exit` | not a desktop command ("not valid"), nothing |
+| Archive a conversation | `SessionEnd`, reason `other` |
+| Delete a conversation | `SessionEnd`, reason `other`; afr's log survives and verifies |
+| Close the window | nothing: the app keeps running, with one `claude` process per open conversation |
+| Exit from the tray icon | `SessionEnd`, reason `other`, for every open conversation |
+| Reopen an ended conversation | `SessionStart`, `source: resume`, same session id |
+
+**What it means for afr.** A desktop session that shows `open` is usually idle, not cut off,
+so the report should judge desktop sessions by last activity. The end reason cannot tell
+archive, delete, and quit apart. Resume keeps one log per conversation.
+
+## F-009: Desktop subagents hand their results back as user prompts (2026-10-11)
+
+**What we saw.** In the desktop app, subagents launched with the Agent tool run in the
+background (`async_launched`). Each finishes by calling a `SubagentHandback` tool with its
+report; its `SubagentStop` has an empty `last_assistant_message`. The harness then delivers
+the report as a new prompt that fires `UserPromptSubmit`, beginning
+`<agent-message from="<agent id>">` and `[Subagent hand-back]`, with a frame saying the text
+is model output, not the user's. Task notifications arrive the same way.
+
+**What it means for afr.** afr counts these as user turns (a session with 2 real prompts
+showed 4) and shows the subagent as finishing with an empty result. Fix: treat a prompt as a
+hand-back only when its `from` id matches a subagent of the same session (a user can type
+the same text), label it as delivered by the harness, and show the hand-back message as the
+subagent's result.
+
+## F-008: The desktop app adds a long note to the user's prompt (2026-10-11)
+
+**What we saw.** In desktop sessions started without a project folder, the `prompt` field of
+the first `UserPromptSubmit` begins with a `<system-reminder>` block of about 4 KB before the
+user's words. It tells the model it is in a scratch workspace, when to offer to move the
+work, how to call `change_directory` and `request_directory`, and lists the project folders
+recently used on the machine. After a move, the next prompt carries a similar note listing
+the files the app copied.
+
+**What it means for afr.** The replay summary shows the note instead of what the user
+typed. Fix: summarize the user's words and show the note separately as harness-added text;
+keep the full prompt in the log. The note is also evidence of what context the app gave
+the model, including other project folders on the machine, so it stays in the record.
+
+## F-007: Withdrawn: a desktop conversation title looked carried over from a deleted one (2026-10-11)
+
+**Withdrawn 2026-10-11 (round 3).** The round 3 export shows the claim was wrong. In
+`fcb60a58` the first prompt (11:41:14 local) asks for productivity suggestions, and a request on
+another topic comes later in the same conversation, so its title "Productivity
+suggestions" is accurate. The deleted conversation (`868903a5`, released at 11:36) was a
+separate, earlier one. The tester remembered the order differently; the logs are the record.
+afr recorded nothing wrong here.
 
 ## F-006: A session start with nothing after it, 8 seconds before the CLI session (2026-10-11)
 
 **What we saw.** Session `86e55708` has one event: `SessionStart`, `source: startup`, folder
-`C:\Users\kier\afr-test`, at 18:34:10 UTC. Its transcript file was never created. The CLI
+`C:\Users\<user>\afr-test`, at 18:34:10 UTC. Its transcript file was never created. The CLI
 session (`92b7d940`, same folder) started at 18:34:18. The user had opened the desktop app
 first, then started `claude` in a terminal. The desktop conversations ran in other folders
 (F-005), and the payload does not say which app sent it.
@@ -33,18 +136,24 @@ settings. To confirm: open the desktop app alone and watch for a lone start.
 gap, but `afr sessions` lists it as `open` forever. Possible fix: show such sessions as
 `empty` and leave them out of gap counts in the digest.
 
+**Round 3 (not confirmed).** Opening the desktop app alone for a minute produced no session
+and no transcript, so the explanation above does not hold as stated. A quick CLI start and
+exit (`52bbcea1`) produced the opposite case: a session end with no start, since the start
+hook never fired before the user quit. Both shapes are noise for a reviewer. `86e55708`
+stays unexplained.
+
 ## F-005: Desktop app conversations were not recorded: hooks were registered for one project only (2026-10-11)
 
 **What we saw.** The test settings put afr's hooks in
-`C:\Users\kier\afr-test\.claude\settings.json`, which applies only to sessions in that
+`C:\Users\<user>\afr-test\.claude\settings.json`, which applies only to sessions in that
 folder. The CLI session there recorded fully (4 turns, 63 tool calls, `SessionEnd` reason
 `prompt_input_exit`). Three other sessions that day produced no afr record at all:
 
 | Session | App (transcript `entrypoint`) | Folder |
 | --- | --- | --- |
 | `868903a5` | `claude-desktop` | `%APPDATA%\Claude\scratch-workspaces\<ids>\scratch-2026-10-11-2aca18`, deleted by the user after one answer |
-| `fcb60a58` | `claude-desktop` | started in another scratch folder, then moved to `Documents\Lucid Dreaming Program`; used 8 subagents and web fetches |
-| `1a7e6e00` | `cli` | `C:\Users\kier\afr` |
+| `fcb60a58` | `claude-desktop` | started in another scratch folder, then moved to `Documents\<project>`; used 8 subagents and web fetches |
+| `1a7e6e00` | `cli` | `C:\Users\<user>\afr` |
 
 **Explanation.** The desktop Code tab does not open conversations in a project folder by
 default: each new conversation starts in a fresh scratch folder under
@@ -68,6 +177,11 @@ Deleting a desktop conversation removes its transcript and leaves only
 4. **Coverage check:** comparing transcripts under `~/.claude/projects` with afr's sessions
    would have shown all three missing sessions. The threat model already lists this as the
    answer to removed hooks; it belongs in the digest.
+
+**Round 3: confirmed fixed by user settings.** With the hooks merged into
+`%USERPROFILE%\.claude\settings.json` (`/hooks` lists them as `[User]`), every desktop Code
+tab conversation was recorded, in scratch folders and after a move. The desktop Chat tab
+does not run Claude Code and is not covered.
 
 ## F-004: Auto mode denials leave a tool call with no result in the hooks (2026-10-10)
 
