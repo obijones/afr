@@ -3,6 +3,7 @@ package view
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/obijones/afr/internal/schema"
 )
@@ -68,10 +69,90 @@ func taskSummary(text string) string {
 	return strings.TrimSpace(tag("status") + ": " + tag("summary"))
 }
 
+// sessionCtx is what deciding a line's meaning needs from the whole
+// session: its subagents, and when afr started recording it.
+type sessionCtx struct {
+	agents map[string]bool
+	// joined is the time of the first event a hook recorded. Events
+	// recovered from the transcript before it happened while afr's hooks
+	// were not active yet: the session was recorded late (F-011).
+	joined time.Time
+}
+
+func newSessionCtx(events []schema.Event) sessionCtx {
+	sc := sessionCtx{agents: subagentIDs(events)}
+	for _, e := range events {
+		if e.Origin == "" && (sc.joined.IsZero() || e.TS.Before(sc.joined)) {
+			sc.joined = e.TS
+		}
+	}
+	return sc
+}
+
+// late reports an event recovered from the transcript from before afr
+// started recording the session.
+func (sc sessionCtx) late(e schema.Event) bool {
+	return e.Origin == schema.OriginTranscript && !sc.joined.IsZero() && e.TS.Before(sc.joined)
+}
+
+// joinedLate reports whether any events predate afr's first hook.
+func (sc sessionCtx) joinedLate(events []schema.Event) bool {
+	for _, e := range events {
+		if sc.late(e) {
+			return true
+		}
+	}
+	return false
+}
+
+// harnessText reports prompt text the harness writes itself: slash
+// command echoes, skill content, image placeholders, notices.
+func harnessText(text string) bool {
+	t := strings.TrimSpace(text)
+	for _, p := range []string{"<command-name>", "<command-message>", "<command-args>", "<local-command-", "<task-notification>",
+		"<agent-message", "Another Claude session sent a message:", "[Image", "Base directory for this skill:", "Caveat:"} {
+		if strings.HasPrefix(t, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // isUserPrompt reports a prompt a person sent: through the prompt hook,
-// and not a subagent's report or task notification the harness delivered.
-func isUserPrompt(e schema.Event, agents map[string]bool) bool {
-	return e.EventType == schema.PromptSubmit && e.Origin == "" && handbackAgent(e, agents) == ""
+// or from before afr joined a session when it is not harness text; and
+// never a subagent's report or task notification the harness delivered.
+func (sc sessionCtx) isUserPrompt(e schema.Event) bool {
+	if e.EventType != schema.PromptSubmit || handbackAgent(e, sc.agents) != "" {
+		return false
+	}
+	if e.Origin == "" {
+		return true
+	}
+	if !sc.late(e) || e.Meta || e.Content == nil {
+		return false
+	}
+	_, typed := splitAppNotes(e.Content.Text)
+	return strings.TrimSpace(typed) != "" && !harnessText(typed)
+}
+
+// inferApp recognizes a desktop session in a log without an entrypoint:
+// only the desktop app works in its scratch-workspaces folder.
+func inferApp(events []schema.Event) string {
+	for _, e := range events {
+		if strings.Contains(strings.ToLower(strings.ReplaceAll(e.Cwd, `\`, "/")), "/claude/scratch-workspaces/") {
+			return "desktop"
+		}
+	}
+	return ""
+}
+
+// appName shortens a transcript entrypoint for display.
+func appName(entrypoint string) string {
+	switch entrypoint {
+	case "claude-desktop":
+		return "desktop"
+	}
+	return entrypoint
 }
 
 // handbackReport returns the report inside a hand-back message, without
