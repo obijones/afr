@@ -74,7 +74,8 @@ type Event struct {
 	PermissionMode string  `json:"permission_mode,omitempty"` // session.start, prompt.submit: the harness permission mode
 	EndReason      string  `json:"end_reason,omitempty"`      // session.end
 	TranscriptPath string  `json:"transcript_path,omitempty"`
-	Notice         *Notice `json:"notice,omitempty"` // harness.notice
+	ScratchpadDir  string  `json:"scratchpad_dir,omitempty"` // the harness's per-session scratch folder, when it changes
+	Notice         *Notice `json:"notice,omitempty"`         // harness.notice
 
 	Content    *Content    `json:"content,omitempty"`
 	Highlights []Highlight `json:"highlights,omitempty"`

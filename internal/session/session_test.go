@@ -429,3 +429,52 @@ func TestCustomRulesAtWriteTime(t *testing.T) {
 		t.Fatalf("%d events logged, want 3", n)
 	}
 }
+
+// Recording follows a desktop folder move and the session's scratchpad,
+// each hook call in its own process (state carried between them).
+func TestRecordFollowsDesktopMove(t *testing.T) {
+	dir := t.TempDir()
+	scratch, pad, moved := `C:\\Users\\u\\AppData\\Roaming\\Claude\\scratch-workspaces\\a\\b\\scratch-1`,
+		`C:\\Users\\u\\AppData\\Local\\Temp\\claude\\scratch-1\\s\\scratchpad`, `C:\\Users\\u\\Documents\\d5`
+	send := func(cwd, rest string) {
+		t.Helper()
+		p := `{"session_id":"` + sid + `","cwd":"` + cwd + `","scratchpad_dir":"` + pad + `",` + rest + `}`
+		c, err := collect.FromClaudeCode([]byte(p), time.Now(), collect.Identity{User: "u", Host: "h"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := Record(dir, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(cwd, id, path string) {
+		send(cwd, `"hook_event_name":"PreToolUse","tool_name":"Write","tool_use_id":"`+id+`","tool_input":{"file_path":"`+path+`","content":"x"}`)
+	}
+	send(scratch, `"hook_event_name":"SessionStart","source":"startup"`)
+	write(scratch, "w1", pad+`\\count.ps1`)
+	write(scratch, "w2", moved+`\\early.txt`) // before the move: outside
+	send(scratch, `"hook_event_name":"PreToolUse","tool_name":"mcp__ccd_directory__change_directory","tool_use_id":"m1","tool_input":{"path":"`+moved+`"}`)
+	send(scratch, `"hook_event_name":"PostToolUse","tool_name":"mcp__ccd_directory__change_directory","tool_use_id":"m1","tool_input":{"path":"`+moved+`"},"tool_response":[{"type":"text","text":"Folder access granted"}]`)
+	write(moved, "w3", moved+`\\plan2.txt`)
+	write(moved, "w4", `C:\\Users\\u\\Desktop\\x.txt`)
+
+	got := map[string][]schema.Highlight{}
+	scratchpads := 0
+	for _, e := range logEvents(t, dir) {
+		if e.EventType == schema.ToolCall {
+			got[e.ToolCallID] = e.Highlights
+		}
+		if e.ScratchpadDir != "" {
+			scratchpads++
+		}
+	}
+	if len(got["w1"]) != 0 || len(got["w3"]) != 0 {
+		t.Errorf("scratchpad or moved-to writes flagged: w1=%v w3=%v", got["w1"], got["w3"])
+	}
+	if len(got["w2"]) != 1 || got["w2"][0].Severity != rules.Medium || len(got["w4"]) != 1 {
+		t.Errorf("writes outside not flagged: w2=%v w4=%v", got["w2"], got["w4"])
+	}
+	if scratchpads != 1 {
+		t.Errorf("scratchpad recorded %d times, want once", scratchpads)
+	}
+}

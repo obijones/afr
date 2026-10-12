@@ -19,7 +19,7 @@ import (
 // Version is stamped on every event the rules evaluate at write time.
 // Bump it whenever a rule's matching or severity changes, so a replay can
 // tell stored highlights from what the current rules would say.
-const Version = "1"
+const Version = "2"
 
 // Severities, highest first. Severity means review priority.
 const (
@@ -42,7 +42,7 @@ func Rank(severity string) int {
 }
 
 // Rule ids. Rules 1 to 12 come from docs/threat-model.md; 13 to 15 were
-// added with the framework research.
+// added with the framework research; 16 from the desktop app testing.
 const (
 	CredentialFile    = "secrets.read_credential_file" // 1
 	SecretInContent   = "secrets.in_content"           // 2
@@ -59,6 +59,7 @@ const (
 	EnvDump           = "secrets.env_dump"             // 13
 	ReverseShell      = "net.reverse_shell_or_tunnel"  // 14
 	InstallFromURL    = "exec.install_from_url"        // 15
+	ScriptBypass      = "exec.script_policy_bypass"    // 16
 )
 
 // Info describes one rule for documentation and tests.
@@ -85,16 +86,18 @@ var Catalog = []Info{
 	{EnvDump, "Environment variable dump", "medium"},
 	{ReverseShell, "Reverse shell or tunnel", "high: reverse shells, ngrok-class tunnels; medium: cloudflared, VS Code and dev tunnels, ssh -R"},
 	{InstallFromURL, "Package install from a URL", "medium"},
+	{ScriptBypass, "Script run with policy bypass or from a temp folder", "medium"},
 }
 
 // Context is what rules need beyond the event. Paths may be in Linux or
 // Windows form whatever the OS afr runs on, since a replay can read a log
 // recorded elsewhere.
 type Context struct {
-	Workspace string   // project root; writes under it are not "outside"
-	Home      string   // the user's home directory
-	DataDir   string   // afr's data directory
-	TempDirs  []string // extra temp folders ($TMPDIR, %TEMP%)
+	Workspace  string   // project root; writes under it are not "outside"
+	Workspaces []string // more folders that count as the workspace (see Workspace.Apply)
+	Home       string   // the user's home directory
+	DataDir    string   // afr's data directory
+	TempDirs   []string // extra temp folders ($TMPDIR, %TEMP%)
 
 	// Custom holds customer rules and overrides of built-in rules; nil
 	// means built-in rules only.

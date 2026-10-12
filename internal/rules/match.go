@@ -69,6 +69,9 @@ var patterns = map[string]string{
 	"rs.high": `(?i)/dev/(tcp|udp)/|\b(nc|ncat|netcat)\b[^|;&]*\s(-e|-c|--exec|--sh-exec|--lua-exec)\s|\bmkfifo\b.*\b(nc|ncat|netcat|telnet|openssl)\b|\bsocat\b.*\b(exec|system):|\b(ba)?sh\s+-i\s*[<>]&|\bsocket\b.*\b(dup2|pty\.spawn|subprocess|fsockopen|/bin/(ba)?sh)\b|\bfsockopen\b|\bTCPSocket\b.*\b(exec|spawn|/bin/sh)\b|Net\.Sockets\.TCPClient\b.*\bGetStream\b|\bngrok\b|\bchisel\b|\bfrpc\b|\blocaltunnel\b|\blt\s+(--port|-p)\b|serveo\.net|localhost\.run|\bbore\s+local\b|pinggy\.io|\btelebit\b`,
 	"rs.med":  `(?i)\bcloudflared\b.*\btunnel\b|\bcode(-insiders)?(\.exe)?\s+tunnel\b|\bdevtunnel\b|\bssh\b[^|;&]*\s-[A-Za-z]*[RD]\b|\btailscale\s+funnel\b|\bplayit\b`,
 
+	// 16: scripts run with the execution policy bypassed.
+	"policy.bypass": `(?i)(^|[\s;|&(])-(ep|ex[a-z]*)(\s+|:)['"]?(bypass|unrestricted)\b|\bset-executionpolicy\b.*\b(bypass|unrestricted)\b`,
+
 	// 15: install from a URL, matched per simple command.
 	"install": `(?i)^((pip[0-9.]*|python[0-9.]*\s+-m\s+pip|uv\s+pip|pipx|uv\s+tool)\s+install\b.*(\s(git\+|svn\+|hg\+|https?://)|\s(-i|--index-url|--extra-index-url|--trusted-host|-f|--find-links)(\s|=))|(npm|pnpm|yarn|bun)\s+(install|i|add)\b.*\s(git\+|git://|https?://|github:|gitlab:|bitbucket:|--registry\b|[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+(#\S*)?(\s|$))|gem\s+install\b.*(--source|https?://)|cargo\s+install\b.*\s--(git|registry|index)\b|brew\s+(install|tap)\b.*https?://|msiexec(\.exe)?\b.*/(i|package)\s+["']?https?://|Install-Package\b.*-Source\s+["']?https?://)`,
 
@@ -125,6 +128,7 @@ var toolRules = []toolRule{
 	{EnvDump, envRule},
 	{ReverseShell, reverseShellRule},
 	{InstallFromURL, installRule},
+	{ScriptBypass, scriptRule},
 }
 
 // cmdText is the command with backslashes as slashes, so path patterns
@@ -268,15 +272,26 @@ func outsideRule(in input, c *Context, s highlightSet) {
 		return
 	}
 	for _, p := range in.writes {
-		if !isAbs(p) || under(p, ws) || match("outside.ok", p) {
+		if !isAbs(p) || inWorkspace(p, c) || match("outside.ok", p) {
 			continue
 		}
 		if isTemp(p, c) {
-			s.add(WriteOutside, Low, p)
+			s.add(WriteOutside, Low, in.show(p))
 			continue
 		}
-		s.add(WriteOutside, Medium, p)
+		s.add(WriteOutside, Medium, in.show(p))
 	}
+}
+
+// inWorkspace reports a path under the workspace or any folder that
+// counts as part of it.
+func inWorkspace(p string, c *Context) bool {
+	for _, w := range append([]string{c.Workspace}, c.Workspaces...) {
+		if w := normPath(w, "", c); w != "" && under(p, w) {
+			return true
+		}
+	}
+	return false
 }
 
 func isTemp(p string, c *Context) bool {
@@ -303,7 +318,7 @@ func isTemp(p string, c *Context) bool {
 func autostartRule(in input, c *Context, s highlightSet) {
 	for _, p := range in.writes {
 		if match("persist.path", p) {
-			s.add(Autostart, High, p)
+			s.add(Autostart, High, in.show(p))
 			return
 		}
 	}
@@ -482,7 +497,7 @@ func hasShort(args []string, letter byte) bool {
 func privRule(in input, c *Context, s highlightSet) {
 	for _, p := range in.writes {
 		if match("priv.path", p) {
-			s.add(PrivEscalation, High, p)
+			s.add(PrivEscalation, High, in.show(p))
 			return
 		}
 	}
@@ -519,7 +534,7 @@ func tamperRule(in input, c *Context, s highlightSet) {
 	}
 	for _, p := range touched {
 		if match("tamper.path", p) || (data != "" && under(p, data)) {
-			s.add(MonitoringTamper, High, p)
+			s.add(MonitoringTamper, High, in.show(p))
 			return
 		}
 	}
@@ -546,7 +561,7 @@ func bypassRule(in input, c *Context, s highlightSet) {
 	}
 	for _, p := range in.writes {
 		if match("bypass.path", p) && match("bypass.content", in.content) {
-			s.add(PermissionBypass, High, "permission settings edited: "+p)
+			s.add(PermissionBypass, High, "permission settings edited: "+in.show(p))
 			return
 		}
 	}
@@ -608,4 +623,67 @@ func MaskSecrets(text string) (out string) {
 		}
 		return "[private key]"
 	})
+}
+
+// Interpreters that run a script file named by their first argument.
+var scriptRunners = map[string]bool{
+	"bash": true, "sh": true, "zsh": true, "dash": true, "ksh": true, "python": true, "python3": true,
+	"node": true, "perl": true, "ruby": true, "cscript": true, "wscript": true, "cmd": true,
+}
+
+// Script file extensions.
+var scriptExts = []string{".ps1", ".psm1", ".bat", ".cmd", ".vbs", ".js", ".sh", ".py", ".pl", ".rb"}
+
+// scriptRule flags a script run with PowerShell's execution policy
+// bypassed, and a script run from a temp folder outside the workspace and
+// the session's scratchpad: writing a script somewhere disposable and
+// running it is a common way to slip past review (ATT&CK T1059.001).
+func scriptRule(in input, c *Context, s highlightSet) {
+	if in.command == "" {
+		return
+	}
+	if m := find("policy.bypass", in.command); m != "" {
+		s.add(ScriptBypass, Medium, "execution policy bypass: "+strings.TrimLeft(m, " ;&|("))
+	}
+	for _, seg := range in.segs {
+		for _, t := range seg.scriptTargets() {
+			p := in.path(t, "", c)
+			if isAbs(p) && isTemp(p, c) && !inWorkspace(p, c) {
+				s.add(ScriptBypass, Medium, "script run from a temp folder: "+in.show(p))
+				return
+			}
+		}
+	}
+}
+
+// scriptTargets lists script files a segment runs: powershell -File X,
+// an interpreter's first argument, or the command word itself.
+func (s segment) scriptTargets() []string {
+	if len(s.words) == 0 {
+		return nil
+	}
+	isScript := func(w string) bool {
+		l := strings.ToLower(strings.Trim(w, `"'`))
+		for _, e := range scriptExts {
+			if strings.HasSuffix(l, e) {
+				return true
+			}
+		}
+		return false
+	}
+	cmd, args := s.name()
+	var out []string
+	switch {
+	case cmd == "powershell" || cmd == "pwsh":
+		if v := flagValue(args, "-File", "-f"); v != "" {
+			out = append(out, v)
+		}
+	case scriptRunners[cmd]:
+		if pos := positional(args); len(pos) > 0 && isScript(pos[0]) {
+			out = append(out, pos[0])
+		}
+	case isScript(s.words[0]):
+		out = append(out, s.words[0])
+	}
+	return out
 }

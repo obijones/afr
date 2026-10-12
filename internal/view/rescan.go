@@ -22,17 +22,24 @@ func Rescan(events []schema.Event, dataDir string) map[string][]schema.Highlight
 	version := ctx.Custom.Version()
 	for _, e := range InTimeOrder(events) {
 		if e.Cwd != "" {
-			ctx.Workspace = e.Cwd
+			ctx.Home = homeFor(e.Cwd)
 			break
 		}
 	}
-	ctx.Home = homeFor(ctx.Workspace)
 
+	if ctx.Home == "" {
+		ctx.Home = homeFor("")
+	}
+
+	// The workspace is tracked event by event, exactly as when recording.
+	var ws rules.Workspace
 	out := map[string][]schema.Highlight{}
 	for _, e := range InTimeOrder(events) {
+		ws.Observe(e)
 		if !rules.Evaluates(e) || e.EventID == "" {
 			continue
 		}
+		ws.Apply(&ctx)
 		if e.RulesVersion == version || (e.Content == nil && e.ContentHash != "") {
 			if e.PermissionMode != "" {
 				ctx.Mode = e.PermissionMode
