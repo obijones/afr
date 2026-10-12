@@ -42,6 +42,7 @@ because the harness runs them, on a machine the user controls.
 | Agent dumps all environment variables (`env`, `printenv`, `/proc/*/environ`) | Logged, output included | Detection only; the dump makes the log itself sensitive | `secrets.env_dump` |
 | Reverse shell or tunnel (`/dev/tcp`, `nc -e`, ngrok, `ssh -R`) | Logged | No network truth (OS or proxy controls) | `net.reverse_shell_or_tunnel` |
 | Package installed from a URL, git repo, or custom index | Logged | Detection only | `exec.install_from_url` |
+| Script run with the execution policy bypassed, or from a temp folder | Logged | Detection only | `exec.script_policy_bypass` |
 | Harness handled a call with no hook, or refused it | Recovered from the transcript, marked `(no hook ran)` and `tool_error` | Transcript is the only source | Structural: shown in replay |
 | User removes hooks | Missing sessions are visible against Claude Code transcripts; open or cut-off sessions shown | Managed settings; central shipping (Phase 5) | Structural: digest flags gaps |
 | User or process edits or deletes the log | Per-session hash chain over metadata and `content_hash`; `afr verify` | Not tamper-proof: an owner can rewrite the whole chain. Signing and central store later | Structural: `afr verify` |

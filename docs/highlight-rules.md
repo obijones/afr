@@ -46,6 +46,7 @@ Bump `rules.Version` whenever a rule's matching or severity changes.
 | | | The same, to file-sharing, paste, or webhook sites (0x0.st, transfer.sh, pastebin, webhook.site, Discord and Slack webhooks, ...) | high | Sigma rates uploads to file-sharing sites high |
 | 6 | `fs.write_outside_workspace` | Writes outside the project folder (file tools, redirects, `tee`, `cp`, `mv`, PowerShell content cmdlets) | medium (afr-adjusted) | OWASP ASI05 mitigation 4 (dedicated working directory) |
 | | | Writes to temp folders (`/tmp`, `$TMPDIR`, `%TEMP%`) | low | Caches and package stores are not flagged |
+| | | The workspace is the first working folder, plus folders the Claude desktop app moved the session to (its `change_directory` tool) and the session's scratchpad (`scratchpad_dir`); writes there are not flagged. A folder the agent reaches with `cd` does not count. | | Desktop findings F-012 |
 | 7 | `persist.autostart` | Shell rc and profile files, PowerShell profiles, cron, systemd units and `systemctl enable`, launchd, Run keys, scheduled tasks, new services | high (afr-adjusted) | ATT&CK [T1546.004](https://attack.mitre.org/techniques/T1546/004/), T1053.003, T1543, T1547.001; Elastic GenAI rc-write rule (high) |
 | 8 | `fs.destructive_command` | `rm -r/-f`, `Remove-Item -Recurse`, `rd /s` in the workspace; `find -delete`, `git clean -f`, `DROP TABLE` | medium (afr-adjusted) | ATT&CK [T1485](https://attack.mitre.org/techniques/T1485/) (names `rm`) |
 | | | Targets `/`, a home folder, or system folders; `dd` or `mkfs` on devices; cloud resource deletion (`terraform destroy`, `aws ... delete-*`, `kubectl delete`) | high | OWASP ASI02 and ASI05 (`rm -rf /`) |
@@ -59,6 +60,7 @@ Bump `rules.Version` whenever a rule's matching or severity changes.
 | 14 | `net.reverse_shell_or_tunnel` | Reverse shells (`/dev/tcp`, `nc -e`, socket one-liners), ngrok-class tunnels, chisel | high | ATT&CK T1059.004, T1095, [T1572](https://attack.mitre.org/techniques/T1572/), ngrok S0508 |
 | | | `cloudflared tunnel`, VS Code and dev tunnels, `ssh -R` and `ssh -D`, Tailscale Funnel | medium | Vendors agree these have common legitimate use |
 | 15 | `exec.install_from_url` | Package installs from a URL, git repo, or custom index (`pip install git+...`, `-i`, `npm install github:...`) | medium | ATT&CK [T1195.001](https://attack.mitre.org/techniques/T1195/001/); ATLAS AML.T0060 |
+| 16 | `exec.script_policy_bypass` | PowerShell with the execution policy bypassed (`-ExecutionPolicy Bypass`, `-ep bypass`, `Set-ExecutionPolicy Unrestricted`); a script run from a temp folder outside the workspace and the session's scratchpad (`bash /tmp/x.sh`, `& $env:TEMP\x.ps1`, `powershell -File`) | medium | ATT&CK [T1059.001](https://attack.mitre.org/techniques/T1059/001/); Sigma [Change PowerShell Policies to an Insecure Level](https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_set_policies_to_unsecure_level.yml) is medium; seen in desktop testing (docs/findings.md F-013) |
 
 Sources for the mappings beyond the links: [MITRE ATLAS](https://atlas.mitre.org/),
 [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/),
@@ -83,7 +85,11 @@ reading `known_hosts` or public keys, and writes to caches and package stores.
 - Rules see content after the 64 KB cap, so a secret past the cap in a long output is
   missed.
 - A relative path in a shell command is taken as relative to the session's working
-  directory; a `cd` earlier in the same command is not followed.
+  directory; a `cd` earlier in the same command is not followed. PowerShell variables
+  assigned a path earlier in the same command (`$p = Join-Path $env:TEMP 'x'`) are
+  followed; other indirection is not.
+- What a script does when it runs is invisible: a script that reads every file in a
+  folder shows only as the command that ran it.
 - Rules 2 and 13 make afr's own log sensitive when they fire: the secret is in the
   recorded content (the highlight detail is masked). Encryption at rest or optional
   redaction is on the roadmap.

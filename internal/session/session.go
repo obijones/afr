@@ -38,14 +38,15 @@ const maxIDs = 2000
 // State is kept per session beside the log, read and written under the
 // session lock.
 type State struct {
-	TranscriptPath string `json:"transcript_path"`
-	Offset         int64  `json:"offset"`
-	PromptID       string `json:"prompt_id"`                // current turn while scanning the transcript
-	Model          string `json:"model"`                    // latest model seen in the transcript
-	Version        string `json:"version"`                  // latest harness version seen in the transcript
-	Workspace      string `json:"workspace"`                // first working directory seen: the project root for rules
-	Mode           string `json:"mode"`                     // latest permission mode seen, for rules
-	RulesProblems  string `json:"rules_problems,omitempty"` // hash of the last customer-rule problems logged
+	TranscriptPath string          `json:"transcript_path"`
+	Offset         int64           `json:"offset"`
+	PromptID       string          `json:"prompt_id"`                // current turn while scanning the transcript
+	Model          string          `json:"model"`                    // latest model seen in the transcript
+	Version        string          `json:"version"`                  // latest harness version seen in the transcript
+	Workspace      string          `json:"workspace"`                // first working directory seen (older state; see Track)
+	Track          rules.Workspace `json:"track"`                    // workspace folders for the rules: root, moves, scratchpad
+	Mode           string          `json:"mode"`                     // latest permission mode seen, for rules
+	RulesProblems  string          `json:"rules_problems,omitempty"` // hash of the last customer-rule problems logged
 
 	HookToolIDs       []string `json:"hook_tool_ids"`       // tool calls hooks recorded, not yet seen in the transcript
 	HookPromptIDs     []string `json:"hook_prompt_ids"`     // prompts hooks recorded
@@ -127,6 +128,11 @@ func Record(dataDir string, c *collect.Converted) error {
 			}
 		}
 		all := append(recovered, events...)
+		// Record the scratchpad when it first appears or changes, so a
+		// replay knows it too without the payload.
+		if c.Scratchpad != "" && c.Scratchpad != st.Track.Scratchpad && len(all) > 0 {
+			all[0].ScratchpadDir = c.Scratchpad
+		}
 		st.highlight(all, dataDir)
 		if err := w.Append(all); err != nil {
 			return err
@@ -139,17 +145,20 @@ func Record(dataDir string, c *collect.Converted) error {
 // calls recovered from the transcript are tagged like hooked ones. A rule
 // failure costs highlights, never the events.
 func (st *State) highlight(events []schema.Event, dataDir string) {
+	if st.Track.Root == "" {
+		st.Track.Root = st.Workspace // state written before Track existed
+	}
 	any := false
 	for _, e := range events {
-		if st.Workspace == "" && e.Cwd != "" {
-			st.Workspace = e.Cwd
-		}
 		any = any || rules.Evaluates(e)
 	}
 	if !any {
+		for _, e := range events {
+			st.Track.Observe(e)
+		}
 		return // nothing to evaluate: skip loading customer rules
 	}
-	ctx, problems := Context(st.Workspace, dataDir)
+	ctx, problems := Context(st.Track.Root, dataDir)
 	ctx.Mode = st.Mode
 	// Report customer-rule problems once per change, not on every call.
 	if len(problems) > 0 {
@@ -166,9 +175,11 @@ func (st *State) highlight(events []schema.Event, dataDir string) {
 		st.RulesProblems = ""
 	}
 	for i := range events {
+		st.Track.Observe(events[i])
 		if !rules.Evaluates(events[i]) {
 			continue
 		}
+		st.Track.Apply(&ctx)
 		hs, err := rules.Evaluate(events[i], &ctx)
 		if err != nil {
 			Warn("highlight rules: " + err.Error())
@@ -180,6 +191,7 @@ func (st *State) highlight(events []schema.Event, dataDir string) {
 		events[i].RulesVersion = ctx.Custom.Version()
 	}
 	st.Mode = ctx.Mode
+	st.Workspace = st.Track.Root
 }
 
 // Context builds the rules context for a session on this machine,
@@ -222,6 +234,9 @@ func (st *State) recover(recs []transcript.Record, base schema.Event, reply stri
 		e.TS = r.TS.UTC()
 		e.Origin = schema.OriginTranscript
 		e.TranscriptUUID = r.UUID
+		if r.Cwd != "" {
+			e.Cwd = r.Cwd // where the session was then, which can differ from the hook's folder now
+		}
 		e.TurnID, e.PromptRef = st.PromptID, ""
 		if st.PromptID != "" {
 			e.PromptRef = e.Session + "#" + st.PromptID
@@ -361,6 +376,7 @@ func (st *State) seedFromLog(path string) error {
 	st.Offset = 0
 	st.HookToolIDs, st.HookPromptIDs, st.TranscriptToolIDs, st.PendingReplies = nil, nil, nil, nil
 	st.seen = map[string]bool{}
+	st.Track = rules.Workspace{}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for sc.Scan() {
@@ -371,6 +387,7 @@ func (st *State) seedFromLog(path string) error {
 		if e.TranscriptUUID != "" {
 			st.seen[e.TranscriptUUID] = true
 		}
+		st.Track.Observe(e)
 		switch e.EventType {
 		case schema.ToolCall:
 			// Logged by a hook or already recovered: either way, skip it
