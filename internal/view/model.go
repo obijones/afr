@@ -236,7 +236,7 @@ func (b *builder) line(e schema.Event) Line {
 		switch {
 		case notes != "" && strings.TrimSpace(typed) == "":
 			tags = append(tags, "note from the app") // nothing typed: the message is the note
-			shown, typed, notes = notes, "", notes
+			shown, typed = notes, ""
 		case notes != "":
 			tags = append(tags, "app note added") // the desktop app's text before the user's (F-008)
 		}
