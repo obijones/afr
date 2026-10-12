@@ -188,6 +188,18 @@ func TestRules(t *testing.T) {
 		// 6 with desktop folders and PowerShell variables.
 		{"ps join-path temp write", ps(`$p = Join-Path $env:TEMP 'd3.txt'; Set-Content -Path $p -Value 'x'`), winDesktop, map[string]string{WriteOutside: Low}},
 		{"ps variable write outside", ps(`$d = 'C:\Users\U\Desktop\x'; New-Item -ItemType Directory -Path $d`), winDesktop, map[string]string{WriteOutside: Medium}},
+		{"ps write in if block", ps(`if (Test-Path "C:\Users\U\Documents\r4") { "exists" } else { New-Item -ItemType Directory -Path "C:\Users\U\Documents\r4" | Out-Null; "created" }`), winDesktop, map[string]string{WriteOutside: Medium}},
+		{"ps env dump in foreach block", ps(`1..2 | ForEach-Object {Get-ChildItem Env:}`), winCtx, map[string]string{EnvDump: Medium}},
+		{"ps braced variable", ps(`Set-Content -Path "${env:TEMP}\x.txt" -Value 1`), winDesktop, map[string]string{WriteOutside: Low}},
+		{"ps braced user variable", ps(`$d = 'C:\Users\U\Documents\afr-d5'; New-Item -Path "${d}\x.txt"`), winDesktop, nil},
+		{"bash sudo after then", bash("if true; then sudo cat /etc/shadow; fi"), linuxCtx, map[string]string{PrivEscalation: Medium, CredentialFile: High}},
+		{"ps dotnet hook removal", ps(`$u = "$env:USERPROFILE\.claude\settings.json"; $s = Get-Content $u -Raw | ConvertFrom-Json; $s.PSObject.Properties.Remove('hooks'); [IO.File]::WriteAllText($u, ($s | ConvertTo-Json -Depth 20))`), winCtx, map[string]string{MonitoringTamper: High, WriteOutside: Medium}},
+		{"ps dotnet copy destination", ps(`[System.IO.File]::Copy("C:\Users\U\proj\a.txt", "C:\Users\U\Desktop\a.txt", $true)`), winCtx, map[string]string{WriteOutside: Medium}},
+		{"ps dotnet write in workspace", ps(`[IO.File]::WriteAllLines("C:\Users\U\proj\out.txt", $lines)`), winCtx, nil},
+		{"ps dotnet read", ps(`[IO.File]::ReadAllText("C:\Users\U\Desktop\a.txt")`), winCtx, nil},
+		{"bash then keyword", bash("if [ -d /etc/x ]; then rm -rf /etc/x; fi"), linuxCtx, map[string]string{Destructive: High}},
+		{"bash brace group", bash("{ cat ~/.ssh/id_rsa; } > /dev/null"), linuxCtx, map[string]string{CredentialFile: High}},
+		{"find exec braces", bash("find . -name '*.tmp' -exec rm {} \\;"), linuxCtx, map[string]string{Destructive: Medium}},
 		{"write in moved folder", call("Write", map[string]any{"file_path": `C:\Users\U\Documents\afr-d5\plan2.txt`}), winDesktop, nil},
 		{"write in scratchpad", call("Write", map[string]any{"file_path": `C:\Users\U\AppData\Local\Temp\claude\scratch-1\s1\scratchpad\count.ps1`}), winDesktop, nil},
 

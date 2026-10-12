@@ -34,7 +34,9 @@ lines, and a prompt sent from a suggestion is marked `(accepted suggestion)`. Tu
 numbered by the prompts a person sent. In the Claude desktop app, the note the app adds
 before a prompt is shown separately (`app note added`), and a subagent's report that the
 harness delivers as a prompt appears as a `HANDBACK` line, not a turn; it is recognized
-only when its sender is a subagent of the same session. `afr sessions` shows the first 8
+only when its sender is a subagent of the same session. When Claude Code flags the report
+as instruction-shaped, the line says `(harness flagged: ...)` and the notice is kept under
+it. `afr sessions` shows the first 8
 characters of each id, which every command accepts (`--full-ids` for whole ids), the app
 that ran the session (`desktop`, `cli`), and the folder a session is in now, after any
 move. The desktop app keeps conversations open, so a desktop session with no end shows as
