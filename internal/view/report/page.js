@@ -119,6 +119,7 @@
     fact(t, "Session", s.id);
     fact(t, "User", s.user + " on " + s.host);
     fact(t, "Folder", s.cwd);
+    fact(t, "Started in", s.start_cwd);
     fact(t, "Agent", s.agent);
     fact(t, "Models", (s.models || []).join(", "));
     fact(t, "Started", s.date + " " + s.start);

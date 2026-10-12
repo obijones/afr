@@ -90,9 +90,11 @@ type Summary struct {
 	Turns     int
 	ToolCalls int
 	Highlight int
+	Severity  [3]int // highlights by severity: high, medium, low
 	User      string
 	Host      string
-	Cwd       string
+	Cwd       string // first working folder seen
+	LastCwd   string // latest working folder, after any move
 	Agent     string
 	Models    []string // models that wrote replies, in order of first use
 	Versions  []string // harness versions seen, in order
@@ -103,6 +105,7 @@ type Summary struct {
 func Summarize(events []schema.Event) Summary {
 	var s Summary
 	open := false
+	agents := subagentIDs(events)
 	for _, e := range InTimeOrder(events) {
 		if s.Session == "" {
 			s.Session, s.Started = e.Session, e.TS
@@ -114,6 +117,9 @@ func Summarize(events []schema.Event) Summary {
 		if e.Cwd != "" && s.Cwd == "" {
 			s.Cwd = e.Cwd
 		}
+		if e.Cwd != "" {
+			s.LastCwd = e.Cwd
+		}
 		if e.Agent != "" {
 			s.Agent = e.Agent
 		}
@@ -124,6 +130,16 @@ func Summarize(events []schema.Event) Summary {
 			s.Versions = append(s.Versions, e.AgentVersion)
 		}
 		s.Highlight += len(e.Highlights)
+		for _, h := range e.Highlights {
+			switch h.Severity {
+			case "high":
+				s.Severity[0]++
+			case "medium":
+				s.Severity[1]++
+			case "low":
+				s.Severity[2]++
+			}
+		}
 		switch e.EventType {
 		case schema.SessionStart:
 			s.Runs++
@@ -135,7 +151,7 @@ func Summarize(events []schema.Event) Summary {
 				s.Status += " (" + e.EndReason + ")"
 			}
 		case schema.PromptSubmit:
-			if e.Origin == "" { // typed by a person; harness-injected messages are not turns
+			if isUserPrompt(e, agents) { // sent by a person; harness-delivered messages are not turns
 				s.Turns++
 			}
 		case schema.HarnessNotice:
