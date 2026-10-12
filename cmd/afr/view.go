@@ -15,6 +15,7 @@ func runSessions(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("sessions", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	limit := fs.Int("n", 20, "show at most this many sessions, most recent first (0 = all)")
+	fullIDs := fs.Bool("full-ids", false, "show whole session ids (default: the first 8 characters, which other commands accept)")
 	if fs.Parse(args) != nil {
 		return 1
 	}
@@ -31,7 +32,7 @@ func runSessions(args []string, stdout, stderr io.Writer) int {
 	if *limit > 0 && len(rows) > *limit {
 		rows = rows[:*limit]
 	}
-	if err := view.SessionTable(stdout, rows, nil); err != nil {
+	if err := view.SessionTable(stdout, rows, nil, *fullIDs); err != nil {
 		return 1
 	}
 	return 0

@@ -70,7 +70,23 @@ func Build(events []schema.Event, current map[string][]schema.Highlight) (*Model
 		return nil, fmt.Errorf("session log is empty")
 	}
 	evs := InTimeOrder(events)
-	b := &builder{current: current, turns: map[string]string{}, results: map[string]schema.Event{}, accepted: map[string]bool{}}
+	b := &builder{current: current, turns: map[string]string{}, results: map[string]schema.Event{}, accepted: map[string]bool{},
+		agents: subagentIDs(events), handbacks: handbackMessages(events), agentTypes: map[string]string{}}
+	for _, e := range evs {
+		if e.AgentID != "" && e.AgentType != "" {
+			b.agentTypes[e.AgentID] = e.AgentType
+		}
+	}
+	// A hand-back the prompt hook recorded also comes back from the
+	// transcript; the hook's copy is shown once.
+	hooked := map[string]bool{}
+	for _, e := range evs {
+		if id := handbackAgent(e, b.agents); id != "" && e.Origin == "" {
+			if _, task := parseHandback(e.Content.Text); !task {
+				hooked[id] = true
+			}
+		}
+	}
 	m := &Model{Summary: Summarize(events), CurrentCount: countHighlights(current)}
 
 	// A subagent end with no agent type is one of Claude Code's own
@@ -93,13 +109,30 @@ func Build(events []schema.Event, current map[string][]schema.Highlight) (*Model
 		}
 	}
 
+	// Turns are numbered by the prompts people sent. A turn started by
+	// something the harness delivered (a subagent's report, a notice)
+	// carries the number of the user turn before it, or none.
 	calls := map[string]bool{}
+	n, last := 0, ""
 	for _, e := range evs {
-		if e.EventType == schema.PromptSubmit && e.TurnID != "" {
-			if _, ok := b.turns[e.TurnID]; !ok {
-				b.turns[e.TurnID] = fmt.Sprintf("t%d", len(b.turns)+1)
-			}
+		if e.EventType != schema.PromptSubmit || e.TurnID == "" {
+			continue
 		}
+		if isUserPrompt(e, b.agents) {
+			if _, ok := b.userTurns[e.TurnID]; !ok {
+				n++
+				if b.userTurns == nil {
+					b.userTurns = map[string]bool{}
+				}
+				b.userTurns[e.TurnID] = true
+				b.turns[e.TurnID] = fmt.Sprintf("t%d", n)
+			}
+			last = b.turns[e.TurnID]
+		} else if _, ok := b.turns[e.TurnID]; !ok && last != "" {
+			b.turns[e.TurnID] = last
+		}
+	}
+	for _, e := range evs {
 		if e.EventType == schema.ToolResult && e.ToolCallID != "" {
 			b.results[e.ToolCallID] = e
 		}
@@ -111,16 +144,25 @@ func Build(events []schema.Event, current map[string][]schema.Highlight) (*Model
 		if e.EventType == schema.ToolResult && calls[e.ToolCallID] {
 			continue // shown with its call
 		}
+		if id := handbackAgent(e, b.agents); id != "" && e.Origin == schema.OriginTranscript && hooked[id] {
+			if _, task := parseHandback(e.Content.Text); !task {
+				continue // the transcript's copy of a hand-back the hook recorded
+			}
+		}
 		m.Lines = append(m.Lines, b.line(e))
 	}
 	return m, nil
 }
 
 type builder struct {
-	current  map[string][]schema.Highlight
-	turns    map[string]string       // turn_id -> t1, t2, ...
-	results  map[string]schema.Event // tool_call_id -> result
-	accepted map[string]bool         // prompts sent from a suggestion, and those suggestions, by event id and time
+	agents     map[string]bool   // subagent ids seen in the session
+	handbacks  map[string]string // subagent id -> report handed back with SubagentHandback
+	agentTypes map[string]string // subagent id -> type
+	userTurns  map[string]bool   // turn ids started by a person's prompt
+	current    map[string][]schema.Highlight
+	turns      map[string]string       // turn_id -> t1, t2, ...
+	results    map[string]schema.Event // tool_call_id -> result
+	accepted   map[string]bool         // prompts sent from a suggestion, and those suggestions, by event id and time
 }
 
 // marks merges what a line shows: the event's stored highlights, a tool
@@ -158,6 +200,9 @@ func (b *builder) line(e schema.Event) Line {
 		c = &schema.Content{}
 	}
 	l := Line{Event: e, Turn: b.turns[e.TurnID], Marks: b.marks(e)}
+	if e.EventType == schema.SessionStart || e.EventType == schema.SessionEnd {
+		l.Turn = "" // the session's, not a turn's
+	}
 	detail := func(label, body string) { l.Details = append(l.Details, Detail{label, body}) }
 	switch e.EventType {
 	case schema.SessionStart:
@@ -167,16 +212,41 @@ func (b *builder) line(e schema.Event) Line {
 		}
 		l.Kind, l.Text = "START", src
 	case schema.PromptSubmit:
-		if e.Origin == schema.OriginTranscript {
-			l.Note = "injected by the harness"
-		} else if b.accepted[e.EventID+e.TS.String()] {
-			l.Note = "accepted suggestion"
+		if id := handbackAgent(e, b.agents); id != "" {
+			// A subagent's report or task notice, delivered by the harness
+			// through the prompt hook (docs/findings.md F-009).
+			from := strings.TrimSpace(b.agentTypes[id] + " " + cut(id, 8))
+			l.Kind, l.Note = "HANDBACK", "delivered by the harness"
+			if _, task := parseHandback(c.Text); task {
+				l.Text = "task notice for " + from + ": " + oneLine(taskSummary(c.Text))
+			} else {
+				l.Text = "report from " + from + ": " + quote(oneLine(handbackReport(c.Text)))
+			}
+			detail("message", c.Text)
+			break
 		}
-		l.Kind, l.Text = "PROMPT", quote(oneLine(c.Text))
+		notes, typed := splitAppNotes(c.Text)
+		var tags []string
+		if e.Origin == schema.OriginTranscript {
+			tags = append(tags, "injected by the harness")
+		} else if b.accepted[e.EventID+e.TS.String()] {
+			tags = append(tags, "accepted suggestion")
+		}
+		shown := typed
+		switch {
+		case notes != "" && strings.TrimSpace(typed) == "":
+			tags = append(tags, "note from the app") // nothing typed: the message is the note
+			shown, typed, notes = notes, "", notes
+		case notes != "":
+			tags = append(tags, "app note added") // the desktop app's text before the user's (F-008)
+		}
+		l.Note = strings.Join(tags, ", ")
+		l.Kind, l.Text = "PROMPT", quote(oneLine(shown))
 		if l.Note != "" {
 			l.Text = "(" + l.Note + ") " + l.Text
 		}
-		detail("prompt", c.Text)
+		detail("prompt", typed)
+		detail("added by the app", notes)
 	case schema.AssistantMessage:
 		l.Kind, l.Text = "AI", quote(oneLine(c.Text))
 		detail("reply", c.Text)
@@ -208,12 +278,20 @@ func (b *builder) line(e schema.Event) Line {
 			if b.accepted[e.EventID+e.TS.String()] {
 				what = "Claude Code suggested the next prompt: "
 			}
+			if strings.TrimSpace(c.Text) == "" {
+				l.Kind, l.Text = "HELPER", "Claude Code background task (no output)"
+				break
+			}
 			l.Kind, l.Text = "HELPER", what+quote(oneLine(c.Text))
 			detail("output", c.Text)
 			break
 		}
-		l.Kind, l.Text = "SUBAGENT", "finished: "+quote(oneLine(c.Text))
-		detail("report", c.Text)
+		report := c.Text
+		if strings.TrimSpace(report) == "" {
+			report = b.handbacks[e.AgentID] // background subagents report through SubagentHandback
+		}
+		l.Kind, l.Text = "SUBAGENT", "finished: "+quote(oneLine(report))
+		detail("report", report)
 	case schema.TurnEnd:
 		l.Kind = "TURN END"
 	case schema.SessionEnd:

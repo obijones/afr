@@ -77,7 +77,7 @@ SESSION abc123  jdoe@ws-204  /repo  claude-code 2.1.295 -> 2.1.296  model: claud
             }
           output:
             <tool_use_error>Blocked: sleep 90 followed by: echo done.</tool_use_error>
-14:00:44  PROMPT    t3  (injected by the harness) "<task-notification>build finished</task-notification>"
+14:00:44  PROMPT    t2  (injected by the harness) "<task-notification>build finished</task-notification>"
           prompt:
             <task-notification>build finished</task-notification>
 14:00:45  TURN END  t2  
