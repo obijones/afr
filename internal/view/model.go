@@ -232,7 +232,19 @@ func (b *builder) line(e schema.Event) Line {
 			if _, task := parseHandback(c.Text); task {
 				l.Text = "task notice for " + from + ": " + oneLine(taskSummary(c.Text))
 			} else {
-				l.Text = "report from " + from + ": " + quote(oneLine(handbackReport(c.Text)))
+				report := handbackReport(c.Text)
+				flagged, warning, rest := harnessWarning(report)
+				own := strings.TrimSpace(b.handbacks[id])
+				if warning != "" && own != "" && !strings.HasPrefix(own, "[harness:") {
+					// The harness's scan of the report goes in a tag so the
+					// report itself leads the line (docs/findings.md F-015).
+					// Only when the subagent's own text lacks the notice: a
+					// subagent must not be able to forge the harness's verdict.
+					from += " (harness flagged: " + flagged + ")"
+					report = rest
+					detail("harness warning", warning)
+				}
+				l.Text = "report from " + from + ": " + quote(oneLine(report))
 			}
 			detail("message", c.Text)
 			break

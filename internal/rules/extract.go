@@ -3,6 +3,7 @@ package rules
 import (
 	"encoding/json"
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -123,8 +124,8 @@ func displayPath(p, cwd string, c *Context) string {
 	// A path written with a variable ($env:TEMP\x, ~/x) is shown as written:
 	// expanding it here would use the reviewer's machine, not the agent's.
 	t := strings.Trim(strings.TrimSpace(p), `"'`)
-	for _, v := range []string{"$HOME", "${HOME}", "%USERPROFILE%", "$env:USERPROFILE", "$env:HOME", "~",
-		"$TMPDIR", "${TMPDIR}", "%TEMP%", "%TMP%", "$env:TEMP", "$env:TMP"} {
+	for _, v := range []string{"$HOME", "${HOME}", "%USERPROFILE%", "$env:USERPROFILE", "${env:USERPROFILE}", "$env:HOME", "~",
+		"$TMPDIR", "${TMPDIR}", "%TEMP%", "%TMP%", "$env:TEMP", "$env:TMP", "${env:TEMP}", "${env:TMP}"} {
 		if hasPrefixFold(t, v) {
 			return t
 		}
@@ -149,13 +150,13 @@ func cleanPath(p, cwd string, c *Context) string {
 			tmp = c.TempDirs[0]
 		}
 	}
-	for _, v := range []string{"$HOME", "${HOME}", "%USERPROFILE%", "$env:USERPROFILE", "$env:HOME", "~"} {
+	for _, v := range []string{"$HOME", "${HOME}", "%USERPROFILE%", "$env:USERPROFILE", "${env:USERPROFILE}", "$env:HOME", "~"} {
 		if home != "" && hasPrefixFold(p, v) && (len(p) == len(v) || p[len(v)] == '/' || p[len(v)] == '\\') {
 			p = home + p[len(v):]
 			break
 		}
 	}
-	for _, v := range []string{"$TMPDIR", "${TMPDIR}", "%TEMP%", "%TMP%", "$env:TEMP", "$env:TMP"} {
+	for _, v := range []string{"$TMPDIR", "${TMPDIR}", "%TEMP%", "%TMP%", "$env:TEMP", "$env:TMP", "${env:TEMP}", "${env:TMP}"} {
 		if hasPrefixFold(p, v) && (len(p) == len(v) || p[len(v)] == '/' || p[len(v)] == '\\') {
 			p = tmp + p[len(v):]
 			break
@@ -220,6 +221,11 @@ func expandVars(t string, vars map[string]string) string {
 	if !strings.HasPrefix(t, "$") || len(vars) == 0 {
 		return t
 	}
+	if strings.HasPrefix(t, "${") { // ${env:TEMP} is $env:TEMP
+		if i := strings.Index(t, "}"); i > 0 {
+			t = "$" + t[2:i] + t[i+1:]
+		}
+	}
 	end := len(t)
 	if i := strings.IndexAny(t, `\/`); i > 0 {
 		end = i
@@ -275,6 +281,8 @@ func (s segment) name() (string, []string) {
 		switch {
 		case strings.Contains(w[0], "=") && !strings.HasPrefix(w[0], "-") && !strings.HasPrefix(w[0], "="):
 			w = w[1:] // VAR=value
+		case shellKeyword(cmd):
+			w = w[1:]
 		case cmd == "sudo" || cmd == "doas" || cmd == "nohup" || cmd == "time" || cmd == "exec" ||
 			cmd == "command" || cmd == "nice" || cmd == "stdbuf" || cmd == "timeout":
 			w = w[1:]
@@ -299,12 +307,22 @@ func (s segment) name() (string, []string) {
 // wrapper itself when there is one (sudo, su, doas).
 func (s segment) first() string {
 	for _, w := range s.words {
-		if strings.Contains(w, "=") && !strings.HasPrefix(w, "-") {
+		if strings.Contains(w, "=") && !strings.HasPrefix(w, "-") || shellKeyword(baseName(w)) {
 			continue
 		}
 		return baseName(w)
 	}
 	return ""
+}
+
+// shellKeyword reports whether a word is a keyword that can come before a
+// command in a segment: `then rm ...`, `else New-Item ...`.
+func shellKeyword(w string) bool {
+	switch w {
+	case "if", "elif", "then", "else", "do", "while", "until", "!":
+		return true
+	}
+	return false
 }
 
 func baseName(w string) string {
@@ -378,6 +396,7 @@ func (s segment) writeTargets() []string {
 			out = append(out, pos[len(pos)-1])
 		}
 	}
+	out = append(out, dotnetWrites(s.raw)...)
 	var keep []string
 	for _, t := range out {
 		l := strings.ToLower(t)
@@ -391,6 +410,57 @@ func (s segment) writeTargets() []string {
 }
 
 // hasFlag reports a short flag, alone or combined (-i, -ri, -i.bak).
+// dotnetWrite matches a .NET file write from PowerShell, such as
+// [IO.File]::WriteAllText($p, $text), up to its arguments.
+var dotnetWrite = regexp.MustCompile(`(?i)\[(?:system\.)?io\.(file|directory)\]::(writeall\w*|appendall\w*|appendtext|create\w*|openwrite|copy|move|replace)\s*\(`)
+
+// dotnetWrites lists the paths .NET file calls in a command write: the
+// first argument, or the second for Copy, Move, and Replace.
+func dotnetWrites(raw string) []string {
+	var out []string
+	for _, m := range dotnetWrite.FindAllStringSubmatchIndex(raw, -1) {
+		args := splitArgs(raw[m[1]:])
+		n := 0
+		switch strings.ToLower(raw[m[4]:m[5]]) {
+		case "copy", "move", "replace":
+			n = 1
+		}
+		if n < len(args) {
+			out = append(out, strings.Trim(args[n], `"' `))
+		}
+	}
+	return out
+}
+
+// splitArgs splits a call's arguments on top-level commas, stopping at its
+// closing parenthesis or the end of the text.
+func splitArgs(t string) []string {
+	var out []string
+	depth, start := 0, 0
+	var quote rune
+	for i, r := range t {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			}
+		case r == '"' || r == '\'':
+			quote = r
+		case r == '(':
+			depth++
+		case r == ')' && depth > 0:
+			depth--
+		case r == ')' || (r == ',' && depth == 0):
+			out = append(out, strings.TrimSpace(t[start:i]))
+			if r == ')' {
+				return out
+			}
+			start = i + 1
+		}
+	}
+	return append(out, strings.TrimSpace(t[start:]))
+}
+
 func hasFlag(args []string, flag string) bool {
 	letter := strings.TrimPrefix(flag, "-")
 	for _, a := range args {
@@ -412,7 +482,9 @@ func hasLong(args []string, flag string) bool {
 }
 
 // splitCommand splits shell text into simple commands on unquoted |, ||,
-// &&, ;, &, and newlines, removing quotes and collecting redirects. The
+// &&, ;, &, newlines, and the braces of a block, removing quotes and
+// collecting redirects. Blocks matter for PowerShell, where commands sit in
+// if, else, and loop bodies: `if (...) { New-Item ... }`. The
 // bodies of sh -c, bash -c, powershell -Command, and cmd /c are split
 // too, so commands wrapped in another shell are still seen.
 func splitCommand(text string, depth int) []segment {
@@ -469,6 +541,24 @@ func splitCommand(text string, depth int) []segment {
 		case '\'', '"':
 			quote = r
 			inWord = true
+		case '{':
+			// A brace starting a word opens a block, except find's {}.
+			// Inside a word it is text: ${var}, @{...}, a{b,c}.
+			if inWord || (i+1 < len(rs) && rs[i+1] == '}') {
+				word.WriteRune(r)
+				inWord = true
+				continue
+			}
+			endSeg(byteAt(i), false)
+			start = byteAt(i + 1)
+		case '}':
+			// Closes a block unless it closes a brace opened in the word.
+			if w := word.String(); inWord && strings.Count(w, "{") > strings.Count(w, "}") {
+				word.WriteRune(r)
+				continue
+			}
+			endSeg(byteAt(i), false)
+			start = byteAt(i + 1)
 		case ' ', '\t', '\r':
 			endWord()
 		case '\n', ';':
