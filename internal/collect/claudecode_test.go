@@ -205,4 +205,17 @@ func TestFailureAndDenialBecomeResults(t *testing.T) {
 		out != "denied by auto mode: [Irreversible Local Destruction]" {
 		t.Errorf("denial: %+v %q", d, out)
 	}
+
+	// A real denial from the Claude desktop app (Windows, auto mode).
+	b, err := os.ReadFile("../../testdata/claude-code/2.1.295-windows-desktop/PermissionDenied.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := conv(string(b))
+	out = ""
+	_ = json.Unmarshal(r.Content.Output, &out)
+	if r.EventType != schema.ToolResult || !r.ToolError || r.Tool != "PowerShell" || r.ToolCallID != "toolu_01J6dwcgxGDkijynsaQzDoAh" ||
+		out != "denied by auto mode: [Credential Materialization]" {
+		t.Errorf("real denial: %+v %q", r, out)
+	}
 }
