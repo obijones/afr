@@ -95,10 +95,27 @@
         var meta = s.start + " · " + s.host + " · " + plural(s.turns, "turn") + " · " + plural(s.tools, "tool call");
         sn.hd.appendChild(el("span", "meta", meta));
         addCounts(sn.hd, sevCounts(s.marks));
-        if (s.denied) sn.hd.appendChild(el("span", "badge deny", plural(s.denied, "denial")));
-        if (s.failed) sn.hd.appendChild(el("span", "badge fail", plural(s.failed, "failed call")));
+        // A failed or denied count opens the session showing only those calls.
+        var showFailed = function (b) {
+          b.title = "Show these calls";
+          b.classList.add("link");
+          b.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            q.value = "";
+            sev.value = "failed";
+            run();
+            var first = s.lineEls && s.lineEls.filter(function (e) { return !e.classList.contains("hidden"); })[0];
+            if (first) first.scrollIntoView({ block: "center" });
+          });
+          return b;
+        };
+        if (s.denied) sn.hd.appendChild(showFailed(el("span", "badge deny", plural(s.denied, "denial"))));
+        if (s.failed) sn.hd.appendChild(showFailed(el("span", "badge fail", plural(s.failed, "failed call"))));
         if (s.notices) sn.hd.appendChild(el("span", "badge warn", plural(s.notices, "notice")));
         if (s.open) sn.hd.appendChild(el("span", "badge warn", "open"));
+        if (s.idle) sn.hd.appendChild(el("span", "badge", "idle " + s.idle));
+        if (s.late) sn.hd.appendChild(el("span", "badge warn", "recorded from " + s.late));
+        if (s.app) sn.hd.appendChild(el("span", "badge", s.app));
         sn.hd.appendChild(el("span", "badge " + (s.integrity_ok ? "ok" : "bad"), s.integrity_ok ? "verified" : "integrity: " + s.integrity));
         un.ch.appendChild(sn);
         sess.push(s);
@@ -124,7 +141,9 @@
     fact(t, "Models", (s.models || []).join(", "));
     fact(t, "Started", s.date + " " + s.start);
     fact(t, "Last event", s.last);
-    fact(t, "Status", s.status);
+    fact(t, "App", s.app === "desktop" ? "Claude desktop app (Code tab)" : s.app);
+    fact(t, "Status", s.idle ? "no end recorded: idle for " + s.idle + " (the desktop app keeps conversations open)" : s.status);
+    if (s.late) fact(t, "Recording", "afr started recording at " + s.late + "; earlier lines were recovered from the transcript");
     fact(t, "Integrity", s.integrity_ok ? "ok: hash chain and content hashes verify" : s.integrity);
     if (s.current) fact(t, "Note", plural(s.current, "highlight") + " marked * come from the current rules, not from when the session was recorded");
     ch.appendChild(t);
@@ -138,6 +157,9 @@
     hd.appendChild(el("span", "k k-" + l.kind.replace(/ /g, "_"), l.kind));
     hd.appendChild(el("span", "tn", l.turn || "-"));
     var x = el("span", "x");
+    // A failed or denied call says so first, where it cannot be cut off.
+    if (l.tool && l.tool.denied) x.appendChild(el("span", "badge deny", "DENIED"));
+    else if (l.tool && l.tool.failed) x.appendChild(el("span", "badge fail", "FAILED"));
     (l.marks || []).forEach(function (m) { x.appendChild(badge(m)); });
     if (l.agent_type) x.appendChild(el("span", "badge", l.agent_type));
     if (l.tool) {
@@ -162,7 +184,8 @@
           }
         });
         (l.details || []).forEach(function (d) {
-          dt.appendChild(el("div", "lbl", d.label));
+          var failed = l.tool && (l.tool.failed || l.tool.denied) && d.label === "output";
+          dt.appendChild(el("div", "lbl" + (failed ? " fail" : ""), failed ? (l.tool.denied ? "denial" : "error") : d.label));
           dt.appendChild(el("pre", "", d.body));
         });
       }
@@ -192,6 +215,7 @@
     if (s.denied) why.push(["deny", plural(s.denied, "call") + " denied by auto mode"]);
     if (s.notices) why.push(["warn", plural(s.notices, "harness notice")]);
     if (s.open) why.push(["warn", "still open: no session end recorded"]);
+    if (s.late) why.push(["warn", "afr started recording at " + s.late + "; earlier events recovered from the transcript"]);
     if (!why.length) return;
     flagged++;
     var r = el("div", "row");
@@ -233,6 +257,7 @@
   }
   function matches(l) {
     var term = q.value.trim().toLowerCase(), min = RANK[sev.value] || 0;
+    if (sev.value === "failed" && !(l.tool && (l.tool.failed || l.tool.denied))) return false;
     if (min && maxRank(l) < min) return false;
     return !term || hay(l).indexOf(term) >= 0;
   }

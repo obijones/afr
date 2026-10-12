@@ -73,6 +73,11 @@ highlights. The running process had picked up the new hook settings.
    ran", and it counts 0 turns. Recovered events earlier than the first hook event should be
    labeled as recorded late, with real prompts counted as turns.
 
+**Fixed** on branch `feat/report-pr-c`: events recovered from before the session's first
+hook event are treated as recorded late. Their user prompts count as turns (harness text and
+`isMeta` prompts, now recorded as `meta`, do not), their calls are not marked "no hook ran",
+and the replay and report mark where afr started recording.
+
 ## F-010: How desktop sessions end and resume (2026-10-11)
 
 | Action in the desktop app | What the hooks recorded |
@@ -87,6 +92,11 @@ highlights. The running process had picked up the new hook settings.
 **What it means for afr.** A desktop session that shows `open` is usually idle, not cut off,
 so the report should judge desktop sessions by last activity. The end reason cannot tell
 archive, delete, and quit apart. Resume keeps one log per conversation.
+
+**Fixed** on branch `feat/report-pr-c`: afr records the app (`entrypoint`) once per
+session, and a desktop session with no end shows as `idle <time>` in `afr sessions` and the
+report instead of being flagged as open. Older logs are recognized as desktop by their
+scratch-workspaces folder.
 
 ## F-009: Desktop subagents hand their results back as user prompts (2026-10-11)
 

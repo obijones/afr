@@ -14,7 +14,7 @@ before any hook ran, and messages the harness injected. `afr verify` checks the 
 ## Review sessions
 
 ```sh
-afr sessions                 # most recent first: status, turns, tools, highlights (high/medium/low), dir, id
+afr sessions                 # most recent first: status, turns, tools, highlights (high/medium/low), app, dir, id
 afr replay 3394              # one session as a conversation (full id or unique prefix)
 afr replay --full 3394       # with complete prompts, replies, tool inputs, and outputs
 afr replay -o s.txt 3394     # write it to a file (UTF-8), for sharing or review
@@ -35,8 +35,12 @@ numbered by the prompts a person sent. In the Claude desktop app, the note the a
 before a prompt is shown separately (`app note added`), and a subagent's report that the
 harness delivers as a prompt appears as a `HANDBACK` line, not a turn; it is recognized
 only when its sender is a subagent of the same session. `afr sessions` shows the first 8
-characters of each id, which every command accepts (`--full-ids` for whole ids), and the
-folder a session is in now, after any move. On Windows,
+characters of each id, which every command accepts (`--full-ids` for whole ids), the app
+that ran the session (`desktop`, `cli`), and the folder a session is in now, after any
+move. The desktop app keeps conversations open, so a desktop session with no end shows as
+`idle 3h` rather than `open`. When afr's hooks start in the middle of a session (hooks
+added while it ran), afr recovers the earlier part from the transcript, counts the user's
+prompts there as turns, and a `NOTE` line marks where recording began. On Windows,
 use `-o` rather than piping to `Out-File`: Windows PowerShell 5.1 re-decodes piped text
 with the console code page and garbles anything outside ASCII. Harness notices, such
 as a safety classifier stopping a response and switching models, appear as `NOTICE` lines
@@ -62,7 +66,9 @@ FILE.html`) for reviewing many sessions: a triage list on top (sessions that are
 open, fail verification, or had denials or harness notices, then every highlight by
 severity, each linked to its line), then sessions grouped by date and user. Each session
 shows the same lines as `afr replay`, from the same code, with full prompts, inputs, and
-output one click down. A search box and a severity filter work across all sessions.
+output one click down. A search box and a filter (highlight severity, or failed and denied
+calls) work across all sessions. Failed and denied calls carry a `FAILED` or `DENIED` badge
+at the front of their line, and a session's "failed calls" count jumps to them.
 Select sessions with `--since 7d`, `--since 36h`, `--since 2026-10-01`, or session ids.
 
 The page loads nothing from the network, and its Content-Security-Policy allows only its

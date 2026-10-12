@@ -120,6 +120,15 @@ func normPath(p, cwd string, c *Context) string {
 // displayPath is normPath for showing: case kept, and backslashes for a
 // Windows path.
 func displayPath(p, cwd string, c *Context) string {
+	// A path written with a variable ($env:TEMP\x, ~/x) is shown as written:
+	// expanding it here would use the reviewer's machine, not the agent's.
+	t := strings.Trim(strings.TrimSpace(p), `"'`)
+	for _, v := range []string{"$HOME", "${HOME}", "%USERPROFILE%", "$env:USERPROFILE", "$env:HOME", "~",
+		"$TMPDIR", "${TMPDIR}", "%TEMP%", "%TMP%", "$env:TEMP", "$env:TMP"} {
+		if hasPrefixFold(t, v) {
+			return t
+		}
+	}
 	p = cleanPath(p, cwd, c)
 	if isWindowsPath(p) {
 		p = strings.ReplaceAll(p, "/", `\`)

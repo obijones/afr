@@ -71,7 +71,8 @@ func Build(events []schema.Event, current map[string][]schema.Highlight) (*Model
 	}
 	evs := InTimeOrder(events)
 	b := &builder{current: current, turns: map[string]string{}, results: map[string]schema.Event{}, accepted: map[string]bool{},
-		agents: subagentIDs(events), handbacks: handbackMessages(events), agentTypes: map[string]string{}}
+		sc: newSessionCtx(events), handbacks: handbackMessages(events), agentTypes: map[string]string{}}
+	b.agents = b.sc.agents
 	for _, e := range evs {
 		if e.AgentID != "" && e.AgentType != "" {
 			b.agentTypes[e.AgentID] = e.AgentType
@@ -118,7 +119,7 @@ func Build(events []schema.Event, current map[string][]schema.Highlight) (*Model
 		if e.EventType != schema.PromptSubmit || e.TurnID == "" {
 			continue
 		}
-		if isUserPrompt(e, b.agents) {
+		if b.sc.isUserPrompt(e) {
 			if _, ok := b.userTurns[e.TurnID]; !ok {
 				n++
 				if b.userTurns == nil {
@@ -140,9 +141,19 @@ func Build(events []schema.Event, current map[string][]schema.Highlight) (*Model
 			calls[e.ToolCallID] = true
 		}
 	}
+	noted := !b.sc.joinedLate(evs)
 	for _, e := range evs {
 		if e.EventType == schema.ToolResult && calls[e.ToolCallID] {
 			continue // shown with its call
+		}
+		if !noted && !b.sc.late(e) {
+			// Where afr's hooks started recording a session already under way.
+			noted = true
+			m.Lines = append(m.Lines, Line{
+				Event: schema.Event{TS: b.sc.joined},
+				Kind:  "NOTE",
+				Text:  "afr started recording here; the lines above were recovered from the transcript",
+			})
 		}
 		if id := handbackAgent(e, b.agents); id != "" && e.Origin == schema.OriginTranscript && hooked[id] {
 			if _, task := parseHandback(e.Content.Text); !task {
@@ -155,6 +166,7 @@ func Build(events []schema.Event, current map[string][]schema.Highlight) (*Model
 }
 
 type builder struct {
+	sc         sessionCtx
 	agents     map[string]bool   // subagent ids seen in the session
 	handbacks  map[string]string // subagent id -> report handed back with SubagentHandback
 	agentTypes map[string]string // subagent id -> type
@@ -227,7 +239,7 @@ func (b *builder) line(e schema.Event) Line {
 		}
 		notes, typed := splitAppNotes(c.Text)
 		var tags []string
-		if e.Origin == schema.OriginTranscript {
+		if e.Origin == schema.OriginTranscript && !b.sc.isUserPrompt(e) {
 			tags = append(tags, "injected by the harness")
 		} else if b.accepted[e.EventID+e.TS.String()] {
 			tags = append(tags, "accepted suggestion")
@@ -259,8 +271,8 @@ func (b *builder) line(e schema.Event) Line {
 			t.Failed = res.ToolError
 			t.Denied = res.ToolError && res.HookEvent == "PermissionDenied"
 		}
-		if e.Origin == schema.OriginTranscript {
-			t.Name += " (no hook ran)" // handled by the harness itself
+		if e.Origin == schema.OriginTranscript && !b.sc.late(e) {
+			t.Name += " (no hook ran)" // handled by the harness itself; not said of calls from before afr joined
 		}
 		t.Summary, t.Status = oneLine(relativeTo(e.Cwd, toolSummary(e.Tool, c.Input))), oneLine(t.Status)
 		l.Kind, l.Tool = "TOOL", t
