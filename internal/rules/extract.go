@@ -125,7 +125,7 @@ func displayPath(p, cwd string, c *Context) string {
 	// expanding it here would use the reviewer's machine, not the agent's.
 	t := strings.Trim(strings.TrimSpace(p), `"'`)
 	for _, v := range []string{"$HOME", "${HOME}", "%USERPROFILE%", "$env:USERPROFILE", "${env:USERPROFILE}", "$env:HOME", "~",
-		"$TMPDIR", "${TMPDIR}", "%TEMP%", "%TMP%", "$env:TEMP", "$env:TMP", "${env:TEMP}", "${env:TMP}"} {
+		"$TMPDIR", "${TMPDIR}", "%TEMP%", "%TMP%", "$env:TEMP", "$env:TMP", "${env:TEMP}", "${env:TMP}", "$PWD", "${PWD}", "%CD%"} {
 		if hasPrefixFold(t, v) {
 			return t
 		}
@@ -136,6 +136,10 @@ func displayPath(p, cwd string, c *Context) string {
 	}
 	return p
 }
+
+// cwdVars name the current folder in a path: PowerShell and POSIX shells'
+// $PWD and cmd's %CD%. They resolve to the event's working folder.
+var cwdVars = []string{"$PWD", "${PWD}", "%CD%"}
 
 func cleanPath(p, cwd string, c *Context) string {
 	p = strings.Trim(strings.TrimSpace(p), `"'`)
@@ -159,6 +163,12 @@ func cleanPath(p, cwd string, c *Context) string {
 	for _, v := range []string{"$TMPDIR", "${TMPDIR}", "%TEMP%", "%TMP%", "$env:TEMP", "$env:TMP", "${env:TEMP}", "${env:TMP}"} {
 		if hasPrefixFold(p, v) && (len(p) == len(v) || p[len(v)] == '/' || p[len(v)] == '\\') {
 			p = tmp + p[len(v):]
+			break
+		}
+	}
+	for _, v := range cwdVars {
+		if cwd != "" && hasPrefixFold(p, v) && (len(p) == len(v) || p[len(v)] == '/' || p[len(v)] == '\\') {
+			p = cwd + p[len(v):]
 			break
 		}
 	}
