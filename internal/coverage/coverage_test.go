@@ -63,6 +63,8 @@ func TestCompare(t *testing.T) {
 		user(50, "p5", "typed while afr's hooks were removed", false),
 		stop(55, "callback"),
 		user(60, "p6", "recovered later from the transcript", false),
+		line(70, map[string]any{"type": "user", "promptId": "p7", "isCompactSummary": true, "isVisibleInTranscriptOnly": true,
+			"message": map[string]any{"role": "user", "content": "This session is being continued from a previous conversation"}}),
 	)
 	r, err := Read(p)
 	if err != nil {
@@ -93,7 +95,8 @@ func TestCompare(t *testing.T) {
 }
 
 // Harness messages never pass through the prompt hook, so afr recovering
-// them from the transcript is normal: the session is still complete.
+// them from the transcript is normal, and one still waiting in the
+// transcript (arrived after afr's last hook) is not yet a gap.
 func TestRecoveredHarnessMessageIsComplete(t *testing.T) {
 	p := write(t, t.TempDir(), "proj", "s2",
 		user(0, "p1", "count the files", false),
@@ -106,6 +109,9 @@ func TestRecoveredHarnessMessageIsComplete(t *testing.T) {
 	}
 	if c := Compare(r, []schema.Event{submit("p1", ""), submit("p2", schema.OriginTranscript)}); c.Status != Complete {
 		t.Errorf("status %q: %+v", c.Status, c)
+	}
+	if c := Compare(r, []schema.Event{submit("p1", "")}); c.Status != Complete || len(c.Missing) != 1 || !c.Missing[0].Harness {
+		t.Errorf("waiting notice: status %q: %+v", c.Status, c)
 	}
 }
 
@@ -146,7 +152,10 @@ func TestTranscripts(t *testing.T) {
 func TestProjectsDir(t *testing.T) {
 	dir := t.TempDir()
 	p := write(t, dir, "proj", "s1", user(0, "p", "x", false))
-	if got := ProjectsDir([]string{"", filepath.Join(dir, "gone", "x.jsonl"), p}); got != dir {
-		t.Errorf("ProjectsDir = %q, want %q", got, dir)
+	if got, found := ProjectsDir([]string{"", filepath.Join(dir, "gone", "x.jsonl"), p}); got != dir || !found {
+		t.Errorf("ProjectsDir = %q %v, want %q", got, found, dir)
+	}
+	if _, found := ProjectsDir([]string{filepath.Join(dir, "no", "such", "x.jsonl"), `C:\Users\u\.claude\projects\p\s.jsonl`}); found && filepath.Separator == '/' {
+		t.Error("fallback reported as found")
 	}
 }

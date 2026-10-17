@@ -100,9 +100,13 @@ ran but afr's did not, which Claude Code notes in the transcript. Slash commands
 `/model` and messages the app adds itself are not prompts and are not counted; messages the
 harness delivers (subagent reports, task notices) are counted separately from typed ones.
 
-The transcripts folder is found from afr's own sessions, else `~/.claude/projects`;
-`--transcripts DIR` sets it, `--json` prints the results. `afr report` includes the same
-check unless given `--no-coverage`. Coverage is advisory: transcripts are not
+The transcripts folder is found from afr's own sessions, else `~/.claude/projects` for
+sessions recorded on this machine; `--transcripts DIR` sets it, `--json` prints the
+results. Sessions unzipped from another machine are never compared with this machine's
+transcripts; their export's `coverage.json` holds the result from where they were
+recorded. `afr report` includes the same check (over the last 30 days unless `--since` is
+given) unless given `--no-coverage`, and still writes a page when afr recorded nothing but
+the transcripts show conversations it missed. Coverage is advisory: transcripts are not
 tamper-evident, the user who can remove the hooks can also edit or delete them, and Claude
 Code deletes them after about 30 days.
 

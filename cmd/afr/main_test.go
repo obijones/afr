@@ -243,6 +243,78 @@ func TestCoverage(t *testing.T) {
 	}
 }
 
+// A transcript for coverage tests: one typed prompt, in its own project folder.
+func writeTranscript(t *testing.T, projects, session string) {
+	t.Helper()
+	b, _ := json.Marshal(map[string]any{"type": "user", "promptId": "p-" + session, "timestamp": time.Now().UTC(),
+		"cwd": `C:\work`, "entrypoint": "cli", "message": map[string]any{"role": "user", "content": "hello"}})
+	p := filepath.Join(projects, "C--work", session+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, append(b, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Sessions unzipped from another machine are never compared with this
+// machine's own transcripts: that would list the reviewer's conversations
+// as missed.
+func TestCoverageRefusesOtherMachine(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("AFR_HOME", home)
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	payload, err := os.ReadFile("../../testdata/claude-code/2.1.296-windows/UserPromptSubmit.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runHook(bytes.NewReader(payload))
+	logs, _ := filepath.Glob(filepath.Join(home, "sessions", "*.ndjson"))
+	local, _ := os.Hostname()
+	for _, l := range logs {
+		b, _ := os.ReadFile(l)
+		os.WriteFile(l, bytes.ReplaceAll(b, []byte(`"host":"`+local+`"`), []byte(`"host":"OTHER-PC"`)), 0o600)
+	}
+	writeTranscript(t, filepath.Join(home, ".claude", "projects"), "reviewer-own-conversation")
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"coverage"}, nil, &out, &errb); code != 1 || !strings.Contains(errb.String(), "OTHER-PC") {
+		t.Errorf("coverage: %d %q", code, errb.String())
+	}
+	file := filepath.Join(t.TempDir(), "r.html")
+	errb.Reset()
+	if code := run([]string{"report", "-o", file}, nil, &out, &errb); code != 0 || !strings.Contains(errb.String(), "coverage not checked") {
+		t.Fatalf("report: %d %s", code, errb.String())
+	}
+	if b, _ := os.ReadFile(file); strings.Contains(string(b), "reviewer-own-conversation") {
+		t.Error("the reviewer's own conversation is in the report")
+	}
+}
+
+// A day with the hooks removed leaves no afr sessions, only transcripts:
+// the report is still written, listing what afr missed.
+func TestReportWithOnlyMissedConversations(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("AFR_HOME", home)
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	projects := t.TempDir()
+	file := filepath.Join(t.TempDir(), "r.html")
+	var out, errb bytes.Buffer
+	if code := run([]string{"report", "-o", file, "--transcripts", projects}, nil, &out, &errb); code != 1 {
+		t.Errorf("report with nothing at all: %d", code)
+	}
+	writeTranscript(t, projects, "missed-conversation")
+	if code := run([]string{"report", "-o", file, "--transcripts", projects}, nil, &out, &errb); code != 0 {
+		t.Fatalf("report: %d %s", code, errb.String())
+	}
+	b, _ := os.ReadFile(file)
+	if !strings.Contains(string(b), "missed-conversation") || !strings.Contains(out.String(), "1 conversations with prompts afr did not record") {
+		t.Errorf("report: %s", out.String())
+	}
+}
+
 func TestParseSince(t *testing.T) {
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.Local)
 	for in, want := range map[string]time.Time{

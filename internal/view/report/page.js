@@ -112,7 +112,8 @@
         if (s.denied) sn.hd.appendChild(showFailed(el("span", "badge deny", plural(s.denied, "denial"))));
         if (s.failed) sn.hd.appendChild(showFailed(el("span", "badge fail", plural(s.failed, "failed call"))));
         if (s.notices) sn.hd.appendChild(el("span", "badge warn", plural(s.notices, "notice")));
-        if (s.coverage && s.coverage.status === "partial") sn.hd.appendChild(el("span", "badge bad", plural(s.coverage.missing.length, "prompt") + " not recorded"));
+        if (s.coverage && s.coverage.status === "partial") sn.hd.appendChild(el("span", "badge bad",
+          plural(s.coverage.missing.filter(function (g) { return !g.harness; }).length, "prompt") + " not recorded"));
         if (s.open) sn.hd.appendChild(el("span", "badge warn", "open"));
         if (s.idle) sn.hd.appendChild(el("span", "badge", "idle " + s.idle));
         if (s.late) sn.hd.appendChild(el("span", "badge warn", "recorded from " + s.late));
@@ -139,14 +140,12 @@
     if (c.status === "complete") parts.push("complete: afr recorded every prompt in the transcript as it happened");
     if (c.status === "complete" && !c.prompts) parts[0] = "complete: the transcript has no prompts";
     if (c.status === "late") parts.push("late: every prompt is in afr's log, some only recovered from the transcript afterwards");
-    if (c.status === "partial") {
-      var typed = c.missing.filter(function (g) { return !g.harness; }), harness = c.missing.length - typed.length;
-      var p = "partial: afr has no record of ";
-      if (typed.length) p += plural(typed.length, "typed prompt") + " (" + typed.map(function (g) { return g.time; }).join(", ") + ")";
-      if (typed.length && harness) p += " and ";
-      if (harness) p += plural(harness, "harness message");
-      parts.push(p);
-    }
+    var missing = c.missing || [], typed = missing.filter(function (g) { return !g.harness; }), harness = missing.length - typed.length;
+    if (c.status === "partial")
+      parts.push("partial: afr has no record of " + plural(typed.length, "typed prompt") + " (" + typed.map(function (g) { return g.time; }).join(", ") + ")");
+    // A harness message can arrive after afr's last hook and wait in the
+    // transcript until afr next runs.
+    if (harness) parts.push(plural(harness, "harness message") + " not yet in afr's log (subagent reports or task notices that arrived after afr last ran)");
     if (c.stops_without_afr) parts.push(plural(c.stops_without_afr.length, "turn") + " ended without afr's hook (" + c.stops_without_afr.join(", ") + ")");
     return parts.join("; ");
   }
@@ -241,8 +240,7 @@
     // prompts afr never saw (docs/findings.md F-014).
     if (s.coverage && s.coverage.status === "partial") {
       var typed = s.coverage.missing.filter(function (g) { return !g.harness; });
-      why.push(["bad", typed.length ? plural(typed.length, "typed prompt") + " not recorded, first at " + typed[0].time
-        : plural(s.coverage.missing.length, "harness message") + " not recorded"]);
+      why.push(["bad", plural(typed.length, "typed prompt") + " not recorded, first at " + typed[0].time]);
     }
     if (!why.length) return;
     flagged++;

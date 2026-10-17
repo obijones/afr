@@ -82,7 +82,16 @@ func checkCoverage(dataDir, dir string, since time.Time) ([]coverage.Result, str
 		for _, r := range rows {
 			known = append(known, transcriptPath(store.LogPath(dataDir, r.Session)))
 		}
-		dir = coverage.ProjectsDir(known)
+		var found bool
+		dir, found = coverage.ProjectsDir(known)
+		// The fallback is this machine's own transcripts: comparing them
+		// with sessions from an export of another machine would list this
+		// machine's conversations as missed.
+		if !found {
+			if h := otherHost(rows); h != "" {
+				return nil, "", fmt.Errorf("the sessions were recorded on %s, not this machine; pass --transcripts with that machine's Claude Code projects folder", h)
+			}
+		}
 	}
 	paths, err := coverage.Transcripts(dir, since)
 	if err != nil {
@@ -98,6 +107,21 @@ func checkCoverage(dataDir, dir string, since time.Time) ([]coverage.Result, str
 		out = append(out, coverage.Compare(r, evs))
 	}
 	return out, dir, nil
+}
+
+// otherHost returns a host the sessions were recorded on that is not this
+// machine, or "".
+func otherHost(rows []view.Summary) string {
+	local, err := os.Hostname()
+	if err != nil {
+		local = ""
+	}
+	for _, r := range rows {
+		if r.Host != "" && !strings.EqualFold(r.Host, local) {
+			return r.Host
+		}
+	}
+	return ""
 }
 
 // transcriptPath reads the transcript a session's state points at.
