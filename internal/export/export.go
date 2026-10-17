@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obijones/afr/internal/coverage"
 	"github.com/obijones/afr/internal/store"
 	"github.com/obijones/afr/internal/view"
 )
@@ -32,6 +33,19 @@ type Options struct {
 	Version string    // afr version, recorded in the manifest
 	Now     time.Time // export time, recorded in the manifest
 	Width   int       // replay summary width; 0 means 200
+
+	// Coverage, when not nil, is written as coverage.json: what Claude
+	// Code's transcripts on this machine say afr missed. The transcripts
+	// themselves are not exported.
+	Coverage    []coverage.Result
+	CoverageDir string
+}
+
+// coverageFile is coverage.json in the zip.
+type coverageFile struct {
+	TranscriptsDir string            `json:"transcripts_dir"`
+	Note           string            `json:"note"`
+	Results        []coverage.Result `json:"results"`
 }
 
 // Session is what the export found for one session.
@@ -149,6 +163,19 @@ func Write(w io.Writer, dataDir string, logPaths []string, o Options) (*Manifest
 			return nil, fmt.Errorf("session %s: raw payloads: %w", id, err)
 		}
 		m.Sessions = append(m.Sessions, s)
+	}
+
+	if o.Coverage != nil {
+		cb, err := json.MarshalIndent(coverageFile{
+			TranscriptsDir: o.CoverageDir, Results: o.Coverage,
+			Note: "advisory: compared with Claude Code transcripts, which are not tamper-evident and are deleted after about 30 days",
+		}, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		if err := add("coverage.json", o.Now, bytes.NewReader(append(cb, '\n'))); err != nil {
+			return nil, err
+		}
 	}
 
 	errLog := filepath.Join(dataDir, "afr-errors.log")

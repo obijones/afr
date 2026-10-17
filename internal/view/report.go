@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obijones/afr/internal/coverage"
 	"github.com/obijones/afr/internal/rules"
 	"github.com/obijones/afr/internal/schema"
 )
@@ -42,6 +43,13 @@ type ReportOptions struct {
 	Generated time.Time
 	Loc       *time.Location // time zone for dates and times (nil = local)
 	Scope     string         // what was selected, for the header
+
+	// Coverage compares the sessions with Claude Code's transcripts; nil
+	// Coverage means it was not checked. Missed sessions are listed only
+	// when ListMissed is set (a report of everything, not chosen sessions).
+	Coverage    []coverage.Result
+	CoverageDir string
+	ListMissed  bool
 }
 
 type reportData struct {
@@ -50,33 +58,65 @@ type reportData struct {
 	Zone      string          `json:"zone"`
 	Scope     string          `json:"scope"`
 	Sessions  []reportSession `json:"sessions"`
+	Coverage  *reportCoverage `json:"coverage,omitempty"`
+}
+
+type reportCoverage struct {
+	Dir    string         `json:"dir"`
+	Listed bool           `json:"listed"` // missed conversations were looked for, not only the chosen sessions
+	Missed []reportMissed `json:"missed"`
+}
+
+// reportMissed is a conversation afr has no log of: metadata only, since
+// its content would come from an unverified transcript.
+type reportMissed struct {
+	ID      string `json:"id"`
+	App     string `json:"app,omitempty"`
+	Cwd     string `json:"cwd,omitempty"`
+	Date    string `json:"date"`
+	Start   string `json:"start"`
+	Last    string `json:"last"`
+	Prompts int    `json:"prompts"`
+}
+
+type reportSessCov struct {
+	Status     string      `json:"status"`
+	Prompts    int         `json:"prompts"`
+	Missing    []reportGap `json:"missing,omitempty"`
+	StopsNoAfr []string    `json:"stops_without_afr,omitempty"`
+}
+
+type reportGap struct {
+	Time    string `json:"time"`
+	Harness bool   `json:"harness,omitempty"`
 }
 
 type reportSession struct {
-	ID          string       `json:"id"`
-	Date        string       `json:"date"`
-	Start       string       `json:"start"`
-	Last        string       `json:"last"`
-	User        string       `json:"user"`
-	Host        string       `json:"host"`
-	Cwd         string       `json:"cwd"`
-	StartCwd    string       `json:"start_cwd,omitempty"`
-	Agent       string       `json:"agent"`
-	Models      []string     `json:"models"`
-	Status      string       `json:"status"`
-	Open        bool         `json:"open"`
-	App         string       `json:"app,omitempty"`  // desktop, cli, or empty when unknown
-	Idle        string       `json:"idle,omitempty"` // a desktop session without an end: time since its last event
-	Late        string       `json:"late,omitempty"` // when afr started recording a session already under way
-	Turns       int          `json:"turns"`
-	Tools       int          `json:"tools"`
-	Failed      int          `json:"failed"`
-	Denied      int          `json:"denied"`
-	Notices     int          `json:"notices"`
-	Integrity   string       `json:"integrity"`
-	IntegrityOK bool         `json:"integrity_ok"`
-	Current     int          `json:"current"`
-	Lines       []reportLine `json:"lines"`
+	ID          string         `json:"id"`
+	Date        string         `json:"date"`
+	Start       string         `json:"start"`
+	Last        string         `json:"last"`
+	User        string         `json:"user"`
+	Host        string         `json:"host"`
+	Cwd         string         `json:"cwd"`
+	StartCwd    string         `json:"start_cwd,omitempty"`
+	Agent       string         `json:"agent"`
+	Models      []string       `json:"models"`
+	Status      string         `json:"status"`
+	Open        bool           `json:"open"`
+	App         string         `json:"app,omitempty"`  // desktop, cli, or empty when unknown
+	Idle        string         `json:"idle,omitempty"` // a desktop session without an end: time since its last event
+	Late        string         `json:"late,omitempty"` // when afr started recording a session already under way
+	Turns       int            `json:"turns"`
+	Tools       int            `json:"tools"`
+	Failed      int            `json:"failed"`
+	Denied      int            `json:"denied"`
+	Notices     int            `json:"notices"`
+	Integrity   string         `json:"integrity"`
+	IntegrityOK bool           `json:"integrity_ok"`
+	Current     int            `json:"current"`
+	Coverage    *reportSessCov `json:"coverage,omitempty"`
+	Lines       []reportLine   `json:"lines"`
 }
 
 type reportLine struct {
@@ -117,6 +157,21 @@ func Report(w io.Writer, sessions []ReportSession, o ReportOptions) error {
 		Scope:     o.Scope,
 		Sessions:  []reportSession{},
 	}
+	n := func(v string) string { return neutralize(v, false) }
+	cov := map[string]coverage.Result{}
+	if o.Coverage != nil {
+		d.Coverage = &reportCoverage{Dir: n(o.CoverageDir), Listed: o.ListMissed, Missed: []reportMissed{}}
+		for _, r := range o.Coverage {
+			cov[r.Session] = r
+			if r.Status == coverage.Missed && o.ListMissed {
+				d.Coverage.Missed = append(d.Coverage.Missed, reportMissed{
+					ID: n(r.Session), App: n(appName(r.App)), Cwd: n(r.Cwd), Prompts: r.Prompts,
+					Date: r.First.In(o.Loc).Format("2006-01-02"), Start: r.First.In(o.Loc).Format("15:04:05"),
+					Last: r.Last.In(o.Loc).Format("2006-01-02 15:04:05"),
+				})
+			}
+		}
+	}
 	for _, s := range sessions {
 		m, err := Build(s.Events, s.Current)
 		if err != nil {
@@ -129,7 +184,6 @@ func Report(w io.Writer, sessions []ReportSession, o ReportOptions) error {
 		}
 		// Every captured value is neutralized, session fields included:
 		// a folder name or end reason can carry control characters too.
-		n := func(v string) string { return neutralize(v, false) }
 		models := make([]string, len(sum.Models))
 		for i, v := range sum.Models {
 			models[i] = n(v)
@@ -147,6 +201,16 @@ func Report(w io.Writer, sessions []ReportSession, o ReportOptions) error {
 		// idle, not cut off (F-010); only other sessions are flagged as open.
 		if rs.Open && sum.App == "desktop" {
 			rs.Open, rs.Idle = false, strings.TrimPrefix(StatusAt(sum, o.Generated), "idle ")
+		}
+		if r, ok := cov[sum.Session]; ok {
+			c := &reportSessCov{Status: r.Status, Prompts: r.Prompts}
+			for _, g := range r.Missing {
+				c.Missing = append(c.Missing, reportGap{Time: g.TS.In(o.Loc).Format("2006-01-02 15:04:05"), Harness: g.Harness})
+			}
+			for _, t := range r.StopsNoAfr {
+				c.StopsNoAfr = append(c.StopsNoAfr, t.In(o.Loc).Format("2006-01-02 15:04:05"))
+			}
+			rs.Coverage = c
 		}
 		if sum.Late {
 			rs.Late = sum.Joined.In(o.Loc).Format("15:04:05")

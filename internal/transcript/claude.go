@@ -17,12 +17,13 @@ import (
 type Kind int
 
 const (
-	Prompt     Kind = iota + 1 // a user (or harness-injected) message that starts a turn
-	Text                       // AI reply text
-	ToolUse                    // AI request to run a tool
-	ToolResult                 // what the tool returned
-	Skipped                    // a line too large to read; Bytes says how large
-	Notice                     // a harness notice: a safeguard stop, a model fallback, a warning
+	Prompt      Kind = iota + 1 // a user (or harness-injected) message that starts a turn
+	Text                        // AI reply text
+	ToolUse                     // AI request to run a tool
+	ToolResult                  // what the tool returned
+	Skipped                     // a line too large to read; Bytes says how large
+	Notice                      // a harness notice: a safeguard stop, a model fallback, a warning
+	HookSummary                 // the Stop hooks that ran at the end of a turn; Hooks lists their commands
 )
 
 // NoticeInfo is the structured part of a harness notice. Fields are empty
@@ -58,6 +59,7 @@ type Record struct {
 	Cwd      string // the session's working folder when the record was written
 	App      string // the app that wrote the record: claude-desktop, cli, ...
 	Notice   *NoticeInfo
+	Hooks    []string // HookSummary only: the command of each hook that ran
 }
 
 // MaxLine is the largest single transcript line ReadFrom will parse;
@@ -158,6 +160,9 @@ type line struct {
 	FallbackModel         string          `json:"fallbackModel"`
 	APIRefusalCategory    string          `json:"apiRefusalCategory"`
 	APIRefusalExplanation string          `json:"apiRefusalExplanation"`
+	HookInfos             []struct {
+		Command string `json:"command"`
+	} `json:"hookInfos"`
 
 	Message struct {
 		Model   string          `json:"model"`
@@ -167,8 +172,7 @@ type line struct {
 
 // systemNotice keeps system records a reviewer should see: a model
 // fallback always, and anything at notice, warning, or error level.
-// Routine records (per-turn hook summaries at "suggestion" level) are
-// dropped.
+// Other routine records at "suggestion" level are dropped.
 func systemNotice(l line, base Record) []Record {
 	switch {
 	case l.Subtype == "model_refusal_fallback":
@@ -207,6 +211,16 @@ func parseLine(b []byte) []Record {
 		return nil
 	}
 	base := Record{UUID: l.UUID, TS: l.Timestamp, PromptID: l.PromptID, Version: l.Version, Meta: l.IsMeta, Cwd: l.Cwd, App: l.Entrypoint}
+	if l.Type == "system" && l.Subtype == "stop_hook_summary" {
+		// Written after each turn's Stop hooks, only when at least one
+		// ran; it is how coverage tells which turns afr saw (F-014).
+		r := base
+		r.Kind = HookSummary
+		for _, h := range l.HookInfos {
+			r.Hooks = append(r.Hooks, h.Command)
+		}
+		return []Record{r}
+	}
 	if l.Type == "system" {
 		return systemNotice(l, base)
 	}

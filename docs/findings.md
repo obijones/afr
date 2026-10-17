@@ -63,6 +63,9 @@ processes ran from before the hooks were removed until after the unrecorded prom
    a transcript with no afr log at all is a conversation afr missed. The planned report
    coverage check (report R2) should compare transcripts against afr logs and use this
    record to show exactly which turns ran without afr.
+   **Addressed** on branch `feat/coverage`: `afr coverage`, the report, and `coverage.json`
+   in exports compare transcripts with afr's logs prompt by prompt. Run over the round 4
+   captures it finds every gap above, plus two round 3 CLI conversations afr never saw.
 4. Organizations should put afr's hooks in managed settings, which users cannot edit.
 5. An agent could do the same. The round's removal command wrote the file with
    `[IO.File]::WriteAllText`, which the rules did not see as a write, so an agent running it

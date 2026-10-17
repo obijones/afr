@@ -112,6 +112,7 @@
         if (s.denied) sn.hd.appendChild(showFailed(el("span", "badge deny", plural(s.denied, "denial"))));
         if (s.failed) sn.hd.appendChild(showFailed(el("span", "badge fail", plural(s.failed, "failed call"))));
         if (s.notices) sn.hd.appendChild(el("span", "badge warn", plural(s.notices, "notice")));
+        if (s.coverage && s.coverage.status === "partial") sn.hd.appendChild(el("span", "badge bad", plural(s.coverage.missing.length, "prompt") + " not recorded"));
         if (s.open) sn.hd.appendChild(el("span", "badge warn", "open"));
         if (s.idle) sn.hd.appendChild(el("span", "badge", "idle " + s.idle));
         if (s.late) sn.hd.appendChild(el("span", "badge warn", "recorded from " + s.late));
@@ -131,6 +132,25 @@
     t.appendChild(tr);
   }
 
+  // What the session's transcript says afr missed (coverage is advisory).
+  function coverageText(c) {
+    if (!c) return D.coverage ? "no transcript found" : "";
+    var parts = [];
+    if (c.status === "complete") parts.push("complete: afr recorded every prompt in the transcript as it happened");
+    if (c.status === "complete" && !c.prompts) parts[0] = "complete: the transcript has no prompts";
+    if (c.status === "late") parts.push("late: every prompt is in afr's log, some only recovered from the transcript afterwards");
+    if (c.status === "partial") {
+      var typed = c.missing.filter(function (g) { return !g.harness; }), harness = c.missing.length - typed.length;
+      var p = "partial: afr has no record of ";
+      if (typed.length) p += plural(typed.length, "typed prompt") + " (" + typed.map(function (g) { return g.time; }).join(", ") + ")";
+      if (typed.length && harness) p += " and ";
+      if (harness) p += plural(harness, "harness message");
+      parts.push(p);
+    }
+    if (c.stops_without_afr) parts.push(plural(c.stops_without_afr.length, "turn") + " ended without afr's hook (" + c.stops_without_afr.join(", ") + ")");
+    return parts.join("; ");
+  }
+
   function fillSession(s, ch) {
     var t = el("table", "facts");
     fact(t, "Session", s.id);
@@ -144,6 +164,7 @@
     fact(t, "App", s.app === "desktop" ? "Claude desktop app (Code tab)" : s.app);
     fact(t, "Status", s.idle ? "no end recorded: idle for " + s.idle + " (the desktop app keeps conversations open)" : s.status);
     if (s.late) fact(t, "Recording", "afr started recording at " + s.late + "; earlier lines were recovered from the transcript");
+    fact(t, "Coverage", coverageText(s.coverage));
     fact(t, "Integrity", s.integrity_ok ? "ok: hash chain and content hashes verify" : s.integrity);
     if (s.current) fact(t, "Note", plural(s.current, "highlight") + " marked * come from the current rules, not from when the session was recorded");
     ch.appendChild(t);
@@ -216,6 +237,13 @@
     if (s.notices) why.push(["warn", plural(s.notices, "harness notice")]);
     if (s.open) why.push(["warn", "still open: no session end recorded"]);
     if (s.late) why.push(["warn", "afr started recording at " + s.late + "; earlier events recovered from the transcript"]);
+    // A gap outranks the idle label: an idle desktop session can hide
+    // prompts afr never saw (docs/findings.md F-014).
+    if (s.coverage && s.coverage.status === "partial") {
+      var typed = s.coverage.missing.filter(function (g) { return !g.harness; });
+      why.push(["bad", typed.length ? plural(typed.length, "typed prompt") + " not recorded, first at " + typed[0].time
+        : plural(s.coverage.missing.length, "harness message") + " not recorded"]);
+    }
     if (!why.length) return;
     flagged++;
     var r = el("div", "row");
@@ -226,6 +254,24 @@
   });
 
   if (!flagged) flags.appendChild(el("p", "empty", "None: every session ended, verifies, and has no denials or notices."));
+
+  var covEl = document.getElementById("coverage");
+  if (!D.coverage) {
+    covEl.appendChild(el("p", "empty", "Not checked: run afr report on the machine that recorded the sessions, or pass --transcripts."));
+  } else {
+    covEl.appendChild(el("p", "mut", "Compared with Claude Code transcripts in " + D.coverage.dir +
+      ". Advisory: transcripts are not tamper-evident, and Claude Code deletes them after about 30 days."));
+    if (!D.coverage.listed) covEl.appendChild(el("p", "empty", "Only the chosen sessions were checked; see each session's Coverage line."));
+    else if (!D.coverage.missed.length) covEl.appendChild(el("p", "empty", "No conversations without an afr log."));
+    D.coverage.missed.forEach(function (m) {
+      var r = el("div", "row");
+      r.appendChild(el("span", "where", m.date + " " + m.start + " " + short(m.id)));
+      r.appendChild(el("span", "badge bad", "no afr log"));
+      if (m.app) r.appendChild(el("span", "badge", m.app));
+      r.appendChild(el("span", "what", plural(m.prompts, "prompt") + ", last activity " + m.last + (m.cwd ? ", in " + m.cwd : "")));
+      covEl.appendChild(r);
+    });
+  }
   var marks = document.getElementById("marks"), all = [];
   sess.forEach(function (s) { s.marks.forEach(function (x) { all.push({ s: s, m: x.m, line: x.line }); }); });
   all.sort(function (a, b) {
