@@ -50,6 +50,8 @@ func TestReplayToFileAndVerifyByPrefix(t *testing.T) {
 func TestExport(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("AFR_HOME", home)
+	t.Setenv("HOME", home) // coverage falls back to ~/.claude/projects: keep it off the real one
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("AFR_CAPTURE_RAW", "1")
 	for _, name := range []string{"SessionStart-startup.json", "UserPromptSubmit.json"} {
 		payload, err := os.ReadFile("../../testdata/claude-code/2.1.296-windows/" + name)
@@ -142,6 +144,8 @@ func TestExport(t *testing.T) {
 func TestReport(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("AFR_HOME", home)
+	t.Setenv("HOME", home) // coverage falls back to ~/.claude/projects: keep it off the real one
+	t.Setenv("USERPROFILE", home)
 	payload, err := os.ReadFile("../../testdata/claude-code/2.1.296-windows/UserPromptSubmit.json")
 	if err != nil {
 		t.Fatal(err)
@@ -165,6 +169,77 @@ func TestReport(t *testing.T) {
 	}
 	if code := run([]string{"report", "--since", "soon"}, nil, &out, &errb); code != 1 {
 		t.Errorf("bad --since: %d", code)
+	}
+}
+
+// afr coverage compares transcripts with afr's logs: a prompt afr recorded,
+// one it missed, and a conversation it never saw.
+func TestCoverage(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("AFR_HOME", home)
+	payload, err := os.ReadFile("../../testdata/claude-code/2.1.296-windows/UserPromptSubmit.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runHook(bytes.NewReader(payload))
+
+	projects := t.TempDir()
+	now := time.Now().UTC()
+	line := func(sec int, prompt, text string) string {
+		b, _ := json.Marshal(map[string]any{"type": "user", "promptId": prompt, "timestamp": now.Add(time.Duration(sec) * time.Second),
+			"cwd": `C:\work`, "entrypoint": "cli", "message": map[string]any{"role": "user", "content": text}})
+		return string(b) + "\n"
+	}
+	write := func(session string, lines ...string) {
+		p := filepath.Join(projects, "C--work", session+".jsonl")
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(strings.Join(lines, "")), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("a6ac7efa-4d80-4eee-8ffa-6159bda964ed", line(0, "04bdc5fc-70c7-418b-922e-d1d0f7bcb2a2", "recorded"), line(60, "p2", "typed with afr's hooks removed"))
+	write("b7000000-0000-0000-0000-000000000000", line(0, "p9", "never recorded"))
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"coverage", "--transcripts", projects}, nil, &out, &errb); code != 0 {
+		t.Fatalf("coverage: %d %s", code, errb.String())
+	}
+	for _, want := range []string{"partial", "missed", "not recorded: typed prompt", "a6ac7efa", "b7000000"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("coverage output missing %q:\n%s", want, out.String())
+		}
+	}
+	out.Reset()
+	if code := run([]string{"coverage", "--transcripts", projects, "--json"}, nil, &out, &errb); code != 0 {
+		t.Fatalf("coverage --json: %d %s", code, errb.String())
+	}
+	var results []map[string]any
+	if err := json.Unmarshal(out.Bytes(), &results); err != nil || len(results) != 2 {
+		t.Fatalf("coverage --json: %v %s", err, out.String())
+	}
+
+	// The export carries the same results, so a reviewer elsewhere sees them.
+	zipPath := filepath.Join(t.TempDir(), "x.zip")
+	if code := run([]string{"export", "-o", zipPath, "--transcripts", projects, "--last", "1"}, nil, &out, &errb); code != 0 {
+		t.Fatalf("export: %d %s", code, errb.String())
+	}
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	var cov struct {
+		Results []struct{ Session, Status string }
+	}
+	for _, f := range zr.File {
+		if f.Name == "coverage.json" {
+			rc, _ := f.Open()
+			err = json.NewDecoder(rc).Decode(&cov)
+			rc.Close()
+		}
+	}
+	if err != nil || len(cov.Results) != 2 {
+		t.Errorf("coverage.json in export: %v %+v", err, cov)
 	}
 }
 

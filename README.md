@@ -21,6 +21,7 @@ afr replay -o s.txt 3394     # write it to a file (UTF-8), for sharing or review
 afr export 3394 a6ac         # zip sessions to review on another machine
 afr export --last 2          # zip the two most recently active sessions
 afr report --since 7d        # one HTML page to review many sessions
+afr coverage --since 7d      # conversations and prompts afr did not record
 ```
 
 A replay reads top to bottom in the order things happened: where the session began, each
@@ -57,6 +58,9 @@ models used, and whether the log's hash chain verifies.
 only these sessions) and `manifest.json` with afr's version, each session's status and
 integrity result, and a SHA-256 for every file. The files keep the data directory's
 layout, so after unzipping, `AFR_HOME=<folder> afr replay <id>` works on any machine.
+It also holds `coverage.json` (see Coverage below) for the exported sessions and, with
+`--last`, conversations in the same period that afr has no log of; the transcripts
+themselves are not exported (`--no-coverage` leaves it out).
 Each log is read under its session lock, so exporting a live session is safe, but afr
 warns that the record is incomplete until the session ends. The zip holds full prompts and
 tool output: share it only with people allowed to see them.
@@ -72,6 +76,10 @@ output one click down. A search box and a filter (highlight severity, or failed 
 calls) work across all sessions. Failed and denied calls carry a `FAILED` or `DENIED` badge
 at the front of their line, and a session's "failed calls" count jumps to them.
 Select sessions with `--since 7d`, `--since 36h`, `--since 2026-10-01`, or session ids.
+The triage also lists what afr did not record (see Coverage): a session with prompts afr
+missed is listed for checking even when it is an idle desktop conversation, and
+conversations afr has no log of are listed by time, app, and folder only, never their
+content.
 
 The page loads nothing from the network, and its Content-Security-Policy allows only its
 own inline style and script. Captured text is embedded once as escaped JSON and drawn as
@@ -79,6 +87,24 @@ text, never as HTML, so a prompt or tool output cannot inject markup. Secrets ar
 in the one-line summaries; the full values under each line are not. The file is written
 owner-only and holds full prompts and tool output: share it only with people allowed to
 see them.
+
+### Coverage
+
+afr can only record what its hooks see. If the hooks are removed, even for a while, the
+conversations go on and afr's log looks normal (docs/findings.md F-014). `afr coverage`
+compares Claude Code's own transcripts with afr's logs, prompt by prompt, and reports
+each conversation as `complete`, `late` (everything is in afr's log, some only recovered
+from the transcript afterwards), `partial` (prompts afr has no record of, with their
+times), or `missed` (no afr log at all). It also counts turns that ended while other hooks
+ran but afr's did not, which Claude Code notes in the transcript. Slash commands such as
+`/model` and messages the app adds itself are not prompts and are not counted; messages the
+harness delivers (subagent reports, task notices) are counted separately from typed ones.
+
+The transcripts folder is found from afr's own sessions, else `~/.claude/projects`;
+`--transcripts DIR` sets it, `--json` prints the results. `afr report` includes the same
+check unless given `--no-coverage`. Coverage is advisory: transcripts are not
+tamper-evident, the user who can remove the hooks can also edit or delete them, and Claude
+Code deletes them after about 30 days.
 
 ## Highlights
 
