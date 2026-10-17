@@ -24,7 +24,7 @@ import (
 const (
 	Complete = "complete" // every prompt reached afr through its hooks
 	Late     = "late"     // every prompt is in afr's log, some only recovered from the transcript afterwards
-	Partial  = "partial"  // afr's log lacks prompts the transcript has
+	Partial  = "partial"  // afr's log lacks typed prompts the transcript has
 	Missed   = "missed"   // afr has no log of the session at all
 )
 
@@ -99,7 +99,9 @@ func Read(path string) (Result, error) {
 		case transcript.Prompt:
 			// A message the harness writes itself (isMeta) never goes
 			// through the prompt hook, so it is not counted.
-			if rec.Meta || rec.PromptID == "" || seen[rec.PromptID] || localCommand(rec.Text) {
+			// Nor are compaction summaries and slash commands Claude Code
+			// ran itself: none of them is a prompt to the model.
+			if rec.Meta || rec.Summary || rec.PromptID == "" || seen[rec.PromptID] || localCommand(rec.Text) {
 				continue
 			}
 			seen[rec.PromptID] = true
@@ -147,8 +149,11 @@ func Compare(r Result, events []schema.Event) Result {
 	switch {
 	case !r.Logged:
 		r.Status = Missed
-	case len(r.Missing) > 0:
+	case r.TypedMissing() > 0:
 		r.Status = Partial
+	// A harness message (a task notice) can arrive after afr's last hook
+	// of a turn and wait in the transcript until afr next runs, so on its
+	// own it is "not yet recovered", not a gap.
 	case typedLate > 0 || len(r.StopsNoAfr) > 0:
 		// afr was not running live for part of the session (F-011).
 		// Harness messages never pass through the prompt hook, so afr
@@ -239,19 +244,23 @@ func Transcripts(dir string, since time.Time) ([]string, error) {
 // ProjectsDir finds the Claude Code projects folder: the one afr's own
 // session state points at (transcript_path is <projects>/<project>/<id>.jsonl),
 // else ~/.claude/projects.
-func ProjectsDir(transcriptPaths []string) string {
+// found is false for the fallback, which is right only for sessions
+// recorded on this machine.
+func ProjectsDir(transcriptPaths []string) (dir string, found bool) {
 	for _, p := range transcriptPaths {
-		if p == "" {
+		// A path from another OS (C:\... read on Linux) is not absolute
+		// here, and its parent would come out as ".".
+		if !filepath.IsAbs(p) {
 			continue
 		}
 		dir := filepath.Dir(filepath.Dir(p))
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			return dir
+			return dir, true
 		}
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return filepath.Join(home, ".claude", "projects")
+	return filepath.Join(home, ".claude", "projects"), false
 }

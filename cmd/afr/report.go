@@ -82,11 +82,6 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 		}
 		sessions = append(sessions, rs)
 	}
-	if len(sessions) == 0 {
-		fmt.Fprintln(stderr, "afr: no sessions to report in", dataDir)
-		return 1
-	}
-
 	scope := "all sessions"
 	switch {
 	case fs.NArg() > 0:
@@ -94,6 +89,24 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 	case *since != "":
 		scope = "sessions active since " + cutoff.Format("2006-01-02 15:04")
 	}
+	opts := view.ReportOptions{Version: version, Generated: now, Scope: scope}
+	if !*noCoverage {
+		opts = withCoverage(opts, dataDir, *transcripts, cutoff, sessions, fs.NArg() == 0, stderr)
+	}
+	// With no sessions there is still a report to write when the
+	// transcripts show conversations afr missed: that is what a day with
+	// the hooks removed looks like (docs/findings.md F-014).
+	gaps := 0
+	for _, r := range opts.Coverage {
+		if r.Status == coverage.Missed || r.Status == coverage.Partial {
+			gaps++
+		}
+	}
+	if len(sessions) == 0 && gaps == 0 {
+		fmt.Fprintln(stderr, "afr: no sessions to report in", dataDir)
+		return 1
+	}
+
 	out := *outPath
 	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 	if out == "" {
@@ -104,10 +117,6 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintln(stderr, "afr:", err)
 		return 1
-	}
-	opts := view.ReportOptions{Version: version, Generated: now, Scope: scope}
-	if !*noCoverage {
-		opts = withCoverage(opts, dataDir, *transcripts, cutoff, sessions, fs.NArg() == 0, stderr)
 	}
 	err = view.Report(f, sessions, opts)
 	if cerr := f.Close(); err == nil {
@@ -121,6 +130,9 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 	n := fmt.Sprintf("%d sessions", len(sessions))
 	if len(sessions) == 1 {
 		n = "1 session"
+	}
+	if gaps > 0 {
+		n += fmt.Sprintf(", %d conversations with prompts afr did not record", gaps)
 	}
 	fmt.Fprintf(stdout, "wrote %s (%s)\n", out, n)
 	fmt.Fprintln(stdout, "it holds full prompts and tool output; share it only with people allowed to see them")
@@ -147,6 +159,9 @@ func parseSince(s string, now time.Time) (time.Time, error) {
 // are listed only for a report of everything; for chosen sessions only
 // their own coverage is kept.
 func withCoverage(o view.ReportOptions, dataDir, dir string, cutoff time.Time, sessions []view.ReportSession, listMissed bool, stderr io.Writer) view.ReportOptions {
+	if cutoff.IsZero() {
+		cutoff = o.Generated.AddDate(0, 0, -30) // Claude Code keeps transcripts about 30 days
+	}
 	results, used, err := checkCoverage(dataDir, dir, cutoff)
 	if err != nil {
 		fmt.Fprintln(stderr, "afr: coverage not checked:", err)

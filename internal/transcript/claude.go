@@ -60,6 +60,7 @@ type Record struct {
 	App      string // the app that wrote the record: claude-desktop, cli, ...
 	Notice   *NoticeInfo
 	Hooks    []string // HookSummary only: the command of each hook that ran
+	Summary  bool     // a compaction summary Claude Code wrote in place of earlier turns
 }
 
 // MaxLine is the largest single transcript line ReadFrom will parse;
@@ -149,6 +150,7 @@ type line struct {
 	IsMeta         bool      `json:"isMeta"`
 	Cwd            string    `json:"cwd"`
 	Entrypoint     string    `json:"entrypoint"`
+	CompactSummary bool      `json:"isCompactSummary"`
 
 	// system records
 	Subtype               string          `json:"subtype"`
@@ -210,7 +212,7 @@ func parseLine(b []byte) []Record {
 	if json.Unmarshal(b, &l) != nil || l.IsSidechain {
 		return nil
 	}
-	base := Record{UUID: l.UUID, TS: l.Timestamp, PromptID: l.PromptID, Version: l.Version, Meta: l.IsMeta, Cwd: l.Cwd, App: l.Entrypoint}
+	base := Record{UUID: l.UUID, TS: l.Timestamp, PromptID: l.PromptID, Version: l.Version, Meta: l.IsMeta, Cwd: l.Cwd, App: l.Entrypoint, Summary: l.CompactSummary}
 	if l.Type == "system" && l.Subtype == "stop_hook_summary" {
 		// Written after each turn's Stop hooks, only when at least one
 		// ran; it is how coverage tells which turns afr saw (F-014).
