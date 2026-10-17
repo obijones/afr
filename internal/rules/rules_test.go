@@ -197,6 +197,9 @@ func TestRules(t *testing.T) {
 		{"ps dotnet copy destination", ps(`[System.IO.File]::Copy("C:\Users\U\proj\a.txt", "C:\Users\U\Desktop\a.txt", $true)`), winCtx, map[string]string{WriteOutside: Medium}},
 		{"ps dotnet write in workspace", ps(`[IO.File]::WriteAllLines("C:\Users\U\proj\out.txt", $lines)`), winCtx, nil},
 		{"ps dotnet read", ps(`[IO.File]::ReadAllText("C:\Users\U\Desktop\a.txt")`), winCtx, nil},
+		{"ps pwd decoy settings", ps(`[IO.File]::WriteAllText("$PWD\decoy\.claude\settings.json", '{}')`), winCtx, map[string]string{MonitoringTamper: High}},
+		{"ps pwd write in workspace", ps(`Set-Content -Path "$PWD\out.txt" -Value 1`), winCtx, nil},
+		{"bash pwd write", bash(`echo x > "${PWD}/../outside.txt"`), linuxCtx, map[string]string{WriteOutside: Medium}},
 		{"bash then keyword", bash("if [ -d /etc/x ]; then rm -rf /etc/x; fi"), linuxCtx, map[string]string{Destructive: High}},
 		{"bash brace group", bash("{ cat ~/.ssh/id_rsa; } > /dev/null"), linuxCtx, map[string]string{CredentialFile: High}},
 		{"find exec braces", bash("find . -name '*.tmp' -exec rm {} \\;"), linuxCtx, map[string]string{Destructive: Medium}},
@@ -354,6 +357,14 @@ func TestDetailKeepsPathCase(t *testing.T) {
 	hs, err := Evaluate(e, &ctx)
 	if err != nil || len(hs) != 1 || hs[0].Detail != `C:\Users\U\Documents\Plan.TXT` {
 		t.Errorf("highlights %v, %v", hs, err)
+	}
+
+	// A path written with $PWD is shown as written, not joined to the folder twice.
+	e = call("PowerShell", map[string]any{"command": `[IO.File]::WriteAllText("$PWD\decoy\.claude\settings.json", '{}')`})
+	e.Cwd = `C:\Users\U\proj`
+	hs, err = Evaluate(e, &ctx)
+	if err != nil || len(hs) != 1 || hs[0].Detail != `$PWD\decoy\.claude\settings.json` {
+		t.Errorf("$PWD highlights %v, %v", hs, err)
 	}
 }
 

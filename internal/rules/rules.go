@@ -19,7 +19,7 @@ import (
 // Version is stamped on every event the rules evaluate at write time.
 // Bump it whenever a rule's matching or severity changes, so a replay can
 // tell stored highlights from what the current rules would say.
-const Version = "3"
+const Version = "4"
 
 // Severities, highest first. Severity means review priority.
 const (

@@ -87,7 +87,8 @@ reading `known_hosts` or public keys, and writes to caches and package stores.
 - A relative path in a shell command is taken as relative to the session's working
   directory; a `cd` earlier in the same command is not followed. PowerShell variables
   assigned a path earlier in the same command (`$p = Join-Path $env:TEMP 'x'`) are
-  followed; other indirection is not.
+  followed, and `$PWD` or `%CD%` at the start of a path is the working directory; other
+  indirection is not.
 - Commands are split on `|`, `&&`, `;`, newlines, and block braces, so commands inside
   PowerShell `if`, `else`, and loop bodies (`if (...) { New-Item ... }`) and after shell
   keywords (`then rm -rf ...`) are seen (rules version 3; earlier versions missed them).
