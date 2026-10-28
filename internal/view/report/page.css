@@ -48,10 +48,11 @@ main{padding:0 16px 48px}
 pre{margin:2px 0 6px;padding:6px 8px;background:var(--pre);border:1px solid var(--line);border-radius:4px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:480px;overflow:auto;font:12px/1.45 ui-monospace,Consolas,monospace}
 .lbl{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
 .mk{font-size:12px;margin:2px 0}
-#marks .row,#flags .row{display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-bottom:1px solid var(--line);cursor:pointer;flex-wrap:wrap}
+#marks .row,#flags .row,#coverage .row{display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-bottom:1px solid var(--line);cursor:pointer;flex-wrap:wrap}
 #marks .row:hover,#flags .row:hover{background:var(--hd)}
-#marks .where{color:var(--mut);font-size:12px;font-family:ui-monospace,Consolas,monospace}
-#marks .what{flex:1 1 300px;min-width:0;overflow-wrap:anywhere;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+#coverage .row{cursor:default}
+#marks .where,#coverage .where{color:var(--mut);font-size:12px;font-family:ui-monospace,Consolas,monospace}
+#marks .what,#coverage .what{flex:1 1 300px;min-width:0;overflow-wrap:anywhere;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
 .empty{color:var(--mut);font-size:13px}
 .flash{background:var(--flash)!important}
 @media (max-width:640px){main{padding:0 8px 48px}.node>.ch{padding-left:6px}.ln .t{display:none}}

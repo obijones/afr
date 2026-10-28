@@ -7,19 +7,22 @@ import (
 	"os"
 	"time"
 
+	"github.com/obijones/afr/internal/coverage"
 	"github.com/obijones/afr/internal/export"
 	"github.com/obijones/afr/internal/platform"
 	"github.com/obijones/afr/internal/store"
 	"github.com/obijones/afr/internal/view"
 )
 
-const exportUsage = "usage: afr export [-o FILE.zip] <session-id or prefix> [...]\n       afr export [-o FILE.zip] --last N\n"
+const exportUsage = "usage: afr export [-o FILE.zip] [--transcripts DIR | --no-coverage] <session-id or prefix> [...]\n       afr export [-o FILE.zip] [--transcripts DIR | --no-coverage] --last N\n"
 
 func runExport(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	outPath := fs.String("o", "", "zip file to write (default afr-export-<time>.zip in the current folder)")
 	last := fs.Int("last", 0, "export the N most recently active sessions")
+	transcripts := fs.String("transcripts", "", "Claude Code projects folder to check coverage against (default: found from afr's sessions)")
+	noCoverage := fs.Bool("no-coverage", false, "do not add coverage.json")
 	if fs.Parse(args) != nil {
 		return 1
 	}
@@ -70,7 +73,11 @@ func runExport(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "afr:", err)
 		return 1
 	}
-	m, err := export.Write(f, dataDir, paths, export.Options{Version: version, Now: now})
+	opts := export.Options{Version: version, Now: now}
+	if !*noCoverage {
+		opts.Coverage, opts.CoverageDir = exportCoverage(dataDir, *transcripts, paths, *last > 0, stderr)
+	}
+	m, err := export.Write(f, dataDir, paths, opts)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -90,4 +97,38 @@ func runExport(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "wrote", out)
 	fmt.Fprintln(stdout, "it holds full prompts and tool output; share it only with people allowed to see them")
 	return 0
+}
+
+// exportCoverage checks the transcripts changed since the earliest exported
+// session started. It keeps the exported sessions' results and, for
+// --last, conversations afr has no log of.
+func exportCoverage(dataDir, dir string, paths []string, listMissed bool, stderr io.Writer) ([]coverage.Result, string) {
+	chosen := map[string]bool{}
+	var since time.Time
+	for _, p := range paths {
+		evs, err := view.Load(p)
+		if err != nil || len(evs) == 0 {
+			continue
+		}
+		s := view.Summarize(evs)
+		chosen[s.Session] = true
+		if since.IsZero() || s.Started.Before(since) {
+			since = s.Started
+		}
+	}
+	results, used, err := checkCoverage(dataDir, dir, since)
+	if err == nil {
+		_, err = os.Stat(used)
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "afr: coverage not checked:", err)
+		return nil, ""
+	}
+	keep := []coverage.Result{}
+	for _, r := range results {
+		if chosen[r.Session] || (listMissed && r.Status == coverage.Missed) {
+			keep = append(keep, r)
+		}
+	}
+	return keep, used
 }

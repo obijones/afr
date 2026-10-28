@@ -10,18 +10,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obijones/afr/internal/coverage"
 	"github.com/obijones/afr/internal/platform"
 	"github.com/obijones/afr/internal/store"
 	"github.com/obijones/afr/internal/view"
 )
 
-const reportUsage = "usage: afr report [-o FILE.html] [--since 7d|36h|2026-10-01] [session-id or prefix ...]\n"
+const reportUsage = "usage: afr report [-o FILE.html] [--since 7d|36h|2026-10-01] [--transcripts DIR | --no-coverage] [session-id or prefix ...]\n"
 
 func runReport(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	outPath := fs.String("o", "", "HTML file to write (default afr-report-<time>.html in the current folder)")
 	since := fs.String("since", "", "only sessions active since then: a number of days (7d), hours (36h), or a date (2026-10-01)")
+	transcripts := fs.String("transcripts", "", "Claude Code projects folder to check coverage against (default: found from afr's sessions)")
+	noCoverage := fs.Bool("no-coverage", false, "do not compare the sessions with Claude Code's transcripts")
 	if fs.Parse(args) != nil {
 		return 1
 	}
@@ -79,11 +82,6 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 		}
 		sessions = append(sessions, rs)
 	}
-	if len(sessions) == 0 {
-		fmt.Fprintln(stderr, "afr: no sessions to report in", dataDir)
-		return 1
-	}
-
 	scope := "all sessions"
 	switch {
 	case fs.NArg() > 0:
@@ -91,6 +89,24 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 	case *since != "":
 		scope = "sessions active since " + cutoff.Format("2006-01-02 15:04")
 	}
+	opts := view.ReportOptions{Version: version, Generated: now, Scope: scope}
+	if !*noCoverage {
+		opts = withCoverage(opts, dataDir, *transcripts, cutoff, sessions, fs.NArg() == 0, stderr)
+	}
+	// With no sessions there is still a report to write when the
+	// transcripts show conversations afr missed: that is what a day with
+	// the hooks removed looks like (docs/findings.md F-014).
+	gaps := 0
+	for _, r := range opts.Coverage {
+		if r.Status == coverage.Missed || r.Status == coverage.Partial {
+			gaps++
+		}
+	}
+	if len(sessions) == 0 && gaps == 0 {
+		fmt.Fprintln(stderr, "afr: no sessions to report in", dataDir)
+		return 1
+	}
+
 	out := *outPath
 	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 	if out == "" {
@@ -102,7 +118,7 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "afr:", err)
 		return 1
 	}
-	err = view.Report(f, sessions, view.ReportOptions{Version: version, Generated: now, Scope: scope})
+	err = view.Report(f, sessions, opts)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -114,6 +130,9 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 	n := fmt.Sprintf("%d sessions", len(sessions))
 	if len(sessions) == 1 {
 		n = "1 session"
+	}
+	if gaps > 0 {
+		n += fmt.Sprintf(", %d conversations with prompts afr did not record", gaps)
 	}
 	fmt.Fprintf(stdout, "wrote %s (%s)\n", out, n)
 	fmt.Fprintln(stdout, "it holds full prompts and tool output; share it only with people allowed to see them")
@@ -134,4 +153,40 @@ func parseSince(s string, now time.Time) (time.Time, error) {
 		return now.Add(-d), nil
 	}
 	return time.Time{}, errors.New("--since: want a number of days (7d), a duration (36h), or a date (2026-10-01), got " + strconv.Quote(s))
+}
+
+// withCoverage adds what the transcripts say afr missed. Missed sessions
+// are listed only for a report of everything; for chosen sessions only
+// their own coverage is kept.
+func withCoverage(o view.ReportOptions, dataDir, dir string, cutoff time.Time, sessions []view.ReportSession, listMissed bool, stderr io.Writer) view.ReportOptions {
+	if cutoff.IsZero() {
+		cutoff = o.Generated.AddDate(0, 0, -30) // Claude Code keeps transcripts about 30 days
+	}
+	results, used, err := checkCoverage(dataDir, dir, cutoff)
+	if err != nil {
+		fmt.Fprintln(stderr, "afr: coverage not checked:", err)
+		return o
+	}
+	if _, err := os.Stat(used); err != nil {
+		fmt.Fprintln(stderr, "afr: coverage not checked: no transcripts folder at", used)
+		return o
+	}
+	if !listMissed {
+		chosen := map[string]bool{}
+		for _, s := range sessions {
+			chosen[view.Summarize(s.Events).Session] = true
+		}
+		var keep []coverage.Result
+		for _, r := range results {
+			if chosen[r.Session] {
+				keep = append(keep, r)
+			}
+		}
+		results = keep
+	}
+	o.Coverage, o.CoverageDir, o.ListMissed = results, used, listMissed
+	if o.Coverage == nil {
+		o.Coverage = []coverage.Result{}
+	}
+	return o
 }
