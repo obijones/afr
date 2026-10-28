@@ -44,7 +44,7 @@ because the harness runs them, on a machine the user controls.
 | Package installed from a URL, git repo, or custom index | Logged | Detection only | `exec.install_from_url` |
 | Script run with the execution policy bypassed, or from a temp folder | Logged | Detection only | `exec.script_policy_bypass` |
 | Harness handled a call with no hook, or refused it | Recovered from the transcript, marked `(no hook ran)` and `tool_error` | Transcript is the only source | Structural: shown in replay |
-| User removes hooks | Missing sessions are visible against Claude Code transcripts; open or cut-off sessions shown | Managed settings; central shipping (Phase 5) | Structural: digest flags gaps |
+| User removes hooks | `afr coverage` and the report compare Claude Code transcripts with afr's logs: conversations with no log, prompts afr missed, and turns that ended without afr's hook (F-014). Removal reaches conversations already open | Advisory only: transcripts are not tamper-evident, the same user can edit or delete them, and they expire after about 30 days. Managed settings; central shipping (Phase 5) | Structural: coverage check |
 | User or process edits or deletes the log | Per-session hash chain over metadata and `content_hash`; `afr verify` | Not tamper-proof: an owner can rewrite the whole chain. Signing and central store later | Structural: `afr verify` |
 | Another local user reads logs | Owner-only files (600 on Linux) | Windows owner-only ACLs; encryption at rest | n/a |
 | Terminal escapes, `\r`, or bidi overrides in captured text | Replay shows them as visible escapes | Same rule for dashboard and export | n/a |

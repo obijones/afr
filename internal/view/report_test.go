@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/obijones/afr/internal/coverage"
 	"github.com/obijones/afr/internal/schema"
 )
 
@@ -147,4 +148,44 @@ func TestReportMasksSecretsInSummaries(t *testing.T) {
 		}
 	}
 	t.Error("prompt line not found")
+}
+
+// Coverage reaches the page: a session's gaps, and conversations afr has
+// no log of, listed by metadata only, with transcript values neutralized.
+func TestReportCoverage(t *testing.T) {
+	evs := synthetic()
+	id := Summarize(evs).Session
+	at := time.Date(2026, 10, 11, 9, 30, 0, 0, time.UTC)
+	o := ReportOptions{Version: "test", Generated: time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC), Loc: time.UTC,
+		CoverageDir: "/home/u/.claude/projects", ListMissed: true,
+		Coverage: []coverage.Result{
+			{Session: id, Logged: true, Status: coverage.Partial, Prompts: 2, Hooked: 1,
+				Missing: []coverage.Gap{{TS: at}}, StopsNoAfr: []time.Time{at.Add(5 * time.Second)}},
+			{Session: "gone-1", App: "claude-desktop", Cwd: "C:\\work\x1b[31m", Status: coverage.Missed, Prompts: 3, First: at, Last: at},
+		}}
+	var b bytes.Buffer
+	if err := Report(&b, []ReportSession{{Events: evs, Integrity: "ok", OK: true}}, o); err != nil {
+		t.Fatal(err)
+	}
+	d := dataOf(t, b.String())
+	cov := d["coverage"].(map[string]any)
+	missed := cov["missed"].([]any)
+	if len(missed) != 1 || cov["listed"] != true {
+		t.Fatalf("coverage: %v", cov)
+	}
+	m := missed[0].(map[string]any)
+	if m["id"] != "gone-1" || m["app"] != "desktop" || m["prompts"].(float64) != 3 || strings.ContainsRune(m["cwd"].(string), 0x1b) {
+		t.Errorf("missed row: %v", m)
+	}
+	sc := d["sessions"].([]any)[0].(map[string]any)["coverage"].(map[string]any)
+	gaps := sc["missing"].([]any)
+	if sc["status"] != "partial" || len(gaps) != 1 || gaps[0].(map[string]any)["time"] != "2026-10-11 09:30:00" ||
+		sc["stops_without_afr"].([]any)[0] != "2026-10-11 09:30:05" {
+		t.Errorf("session coverage: %v", sc)
+	}
+
+	// Not checked: no coverage block, so the page says so.
+	if _, ok := dataOf(t, reportOf(t, []ReportSession{{Events: evs, Integrity: "ok", OK: true}}))["coverage"]; ok {
+		t.Error("coverage block present though coverage was not checked")
+	}
 }
