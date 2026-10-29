@@ -1,6 +1,6 @@
-# afr: Agent Flight Recorder
+# AFR: Agent Flight Recorder
 
-**A flight recorder for AI coding assistants.** afr quietly keeps a complete record of what
+**A flight recorder for AI coding assistants.** AFR quietly keeps a complete record of what
 an AI agent was asked, what it answered, and every action it took on your computer, so
 that someone can look back later and see exactly what happened.
 
