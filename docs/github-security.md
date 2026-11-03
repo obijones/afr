@@ -10,7 +10,7 @@ GitHub settings are not stored in the repository, so this page records how
 | --- | --- | --- |
 | Default workflow token permissions | read | Least privilege; the workflow also sets `contents: read` |
 | Workflows can approve pull requests | off | A workflow must not approve its own changes |
-| Allowed actions | GitHub-owned only (`actions/*`) | afr uses only `actions/checkout` and `actions/setup-go` |
+| Allowed actions | GitHub-owned only (`actions/*`) | AFR uses only `actions/checkout` and `actions/setup-go` |
 | Require actions pinned to a full commit SHA | on | A SHA is the only immutable reference; tags can move |
 | Workflows from fork pull requests | off; no tokens or secrets to forks | Untrusted code never runs with repository access |
 | Access from other repositories | none | |
