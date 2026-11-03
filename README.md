@@ -21,7 +21,7 @@ answer after the fact:
 - Is the record complete, or was monitoring switched off for part of the time?
 
 An aircraft's flight recorder does not fly the plane; it makes sure that when something
-needs explaining, the facts are there. afr does the same for AI agents.
+needs explaining, the facts are there. AFR does the same for AI agents.
 
 ## Who it is for
 
@@ -37,16 +37,16 @@ needs explaining, the facts are there. afr does the same for AI agents.
 | **Records every session** | Each prompt, each AI reply, and every tool the agent used (commands, file reads and writes, web requests), with the results. |
 | **Makes it easy to review** | Replay a session as a readable conversation, or produce one offline web page to review many sessions at once. |
 | **Points out what deserves a look** | Sixteen built-in rules highlight risky actions, such as reading credentials, downloading and running code, writing outside the project, or the agent editing its own monitoring. Organizations can add their own rules. |
-| **Shows when records are missing** | A coverage check compares the assistant's own history with afr's records and lists conversations or prompts afr never saw, for example while its hooks were removed. |
+| **Shows when records are missing** | A coverage check compares the assistant's own history with AFR's records and lists conversations or prompts AFR never saw, for example while its hooks were removed. |
 | **Detects tampering** | Every log entry is chained to the one before it, so later edits to a log can be detected. |
 | **Packages sessions for others** | Export sessions as one zip to review on another machine. |
 
 ## What it does not do
 
-- **It does not prevent anything.** afr is a recorder, not a guard. Pair it with operating
+- **It does not prevent anything.** AFR is a recorder, not a guard. Pair it with operating
   system, container, or network controls when actions must be stopped.
 - **It cannot stop an administrator.** Someone with full control of the machine can remove
-  or rewrite afr and its logs. afr makes gaps and edits visible; it cannot make them
+  or rewrite AFR and its logs. AFR makes gaps and edits visible; it cannot make them
   impossible.
 - **It does not watch the person.** Only what the AI agent does is recorded, not the user's
   own terminal, editor, or browser.
@@ -71,9 +71,9 @@ Early development, not yet a released product.
 
 ## Getting started
 
-### 1. Build afr
+### 1. Build AFR
 
-afr is a single program with no dependencies. You need [Go](https://go.dev/dl/) 1.25 or
+AFR is a single program with no dependencies. You need [Go](https://go.dev/dl/) 1.25 or
 later.
 
 ```sh
@@ -83,11 +83,11 @@ make build-windows  # Windows: bin/afr.exe
 
 ### 2. Connect it to Claude Code
 
-Claude Code runs afr through **hooks**: small commands it calls at each step of a
+Claude Code runs AFR through **hooks**: small commands it calls at each step of a
 session. Until `afr install` exists, add them by hand to your Claude Code user settings,
 `~/.claude/settings.json` (on Windows, `%USERPROFILE%\.claude\settings.json`). Merge the
 `hooks` block into any settings you already have, and replace the path with where you put
-afr (on Windows, for example `C:\\Users\\you\\afr\\afr.exe hook`, with doubled
+AFR (on Windows, for example `C:\\Users\\you\\afr\\afr.exe hook`, with doubled
 backslashes):
 
 ```json
@@ -109,7 +109,7 @@ backslashes):
 In Claude Code, `/hooks` lists the hooks it loaded. Hooks in user settings apply to every
 project, in both the command-line tool and the desktop app.
 
-To try afr without touching your own settings, use the [sandbox](#try-it-in-a-sandbox)
+To try AFR without touching your own settings, use the [sandbox](#try-it-in-a-sandbox)
 instead.
 
 ### 3. Use your assistant as usual, then look at what it did
@@ -130,7 +130,7 @@ afr report --since 7d        # one web page to review the last week
 | `afr replay -o s.txt 3394` | Writes the replay to a file (UTF-8) for sharing. |
 | `afr report --since 7d` | Writes one offline HTML page to review many sessions. |
 | `afr export 3394 a6ac` | Zips sessions to review on another machine. `--last 2` takes the two most recent. |
-| `afr coverage --since 7d` | Lists conversations and prompts afr did not record. |
+| `afr coverage --since 7d` | Lists conversations and prompts AFR did not record. |
 | `afr verify 3394` | Checks that a session's log has not been altered. |
 | `afr rules check`, `test`, `list` | Help write and check custom highlight rules. |
 
@@ -154,14 +154,14 @@ Some lines are marked so they are not mistaken for ordinary activity:
 
 | Marker | Meaning |
 | --- | --- |
-| `(no hook ran)` | A tool call Claude Code handled without calling afr; recovered from its own history. |
+| `(no hook ran)` | A tool call Claude Code handled without calling AFR; recovered from its own history. |
 | `FAILED` error, `denied by auto mode` | The call failed, or Claude Code's auto mode refused it (with the reason). |
 | `HELPER` | Claude Code's own background tasks, such as prompt suggestions or the session recap. |
 | `(accepted suggestion)` | A prompt sent by accepting a suggestion. |
 | `app note added` | A note the desktop app added before a prompt. |
 | `HANDBACK` | A subagent's report delivered back to the conversation. It is not a turn, and is recognized only when its sender is a subagent of the same session. If Claude Code flagged it as instruction-shaped, the line says `(harness flagged: ...)`. |
 | `NOTICE` | A harness notice, such as a safety classifier stopping a response and switching models. |
-| `NOTE` | Where recording began, when afr's hooks were added in the middle of a session. The earlier part is recovered from the transcript. |
+| `NOTE` | Where recording began, when AFR's hooks were added in the middle of a session. The earlier part is recovered from the transcript. |
 | `*` | A highlight from today's rules on an older session, shown without changing the log. |
 
 On Windows, use `-o` rather than piping to `Out-File`: Windows PowerShell 5.1 re-decodes
@@ -174,7 +174,7 @@ piped text with the console code page and garbles anything outside ASCII.
 
 - **Triage list on top:** sessions still open, sessions that fail verification or had
   denials or harness notices, then every highlight by severity, each linked to its line.
-  It also lists what afr did not record (see [Coverage](#coverage)).
+  It also lists what AFR did not record (see [Coverage](#coverage)).
 - **Sessions grouped by date and user**, each showing the same lines as `afr replay`, with
   full prompts, inputs, and output one click down.
 - **Search and filter** across all sessions, by highlight severity or by failed and denied
@@ -196,44 +196,44 @@ session it holds the log, its state file, a full replay (`replay-<id>.txt`), and
 payloads. It also holds:
 
 - `afr-errors.log`: the whole error log, not only these sessions;
-- `manifest.json`: afr's version, each session's status and integrity result, and a
+- `manifest.json`: AFR's version, each session's status and integrity result, and a
   SHA-256 for every file;
 - `coverage.json`: the [coverage](#coverage) result for the exported sessions and, with
-  `--last`, conversations in the same period that afr has no log of. The transcripts
+  `--last`, conversations in the same period that AFR has no log of. The transcripts
   themselves are not exported. `--no-coverage` leaves it out.
 
 The files keep the data directory's layout, so after unzipping,
 `AFR_HOME=<folder> afr replay <id>` works on any machine. Exporting a live session is safe,
-but afr warns that its record is incomplete until the session ends. The zip holds full
+but AFR warns that its record is incomplete until the session ends. The zip holds full
 prompts and tool output: share it only with people allowed to see them.
 
 ## Coverage
 
-afr can only record what its hooks see. If the hooks are removed, even for a while,
-conversations go on and afr's log still looks normal (finding F-014 in
+AFR can only record what its hooks see. If the hooks are removed, even for a while,
+conversations go on and AFR's log still looks normal (finding F-014 in
 [docs/findings.md](docs/findings.md)). `afr coverage` compares Claude Code's own
-transcripts with afr's logs, prompt by prompt, and reports each conversation as:
+transcripts with AFR's logs, prompt by prompt, and reports each conversation as:
 
 | Status | Meaning |
 | --- | --- |
-| `complete` | afr recorded every prompt as it happened. |
-| `late` | Everything is in afr's log, but some of it was recovered from the transcript afterwards. |
-| `partial` | Some prompts are missing from afr's log; their times are listed. |
-| `missed` | afr has no log of the conversation at all. |
+| `complete` | AFR recorded every prompt as it happened. |
+| `late` | Everything is in AFR's log, but some of it was recovered from the transcript afterwards. |
+| `partial` | Some prompts are missing from AFR's log; their times are listed. |
+| `missed` | AFR has no log of the conversation at all. |
 
-It also counts turns that ended while other hooks ran but afr's did not. Slash commands
+It also counts turns that ended while other hooks ran but AFR's did not. Slash commands
 such as `/model` and messages the app adds itself are not prompts and are not counted;
 messages the harness delivers (subagent reports, task notices) are counted separately from
 typed ones.
 
-The transcripts folder is found from afr's own sessions, else `~/.claude/projects` for
+The transcripts folder is found from AFR's own sessions, else `~/.claude/projects` for
 sessions recorded on this machine. `--transcripts DIR` sets it, and `--json` prints the
 results. Sessions unzipped from another machine are never compared with this machine's
 transcripts; their export's `coverage.json` holds the result from where they were
 recorded.
 
 `afr report` includes the same check (over the last 30 days unless `--since` is given)
-unless given `--no-coverage`. It still writes a page when afr recorded nothing but the
+unless given `--no-coverage`. It still writes a page when AFR recorded nothing but the
 transcripts show conversations it missed.
 
 Coverage is advisory: transcripts are not tamper-evident, the user who can remove the hooks
@@ -257,7 +257,7 @@ rules: [docs/highlight-rules.md](docs/highlight-rules.md).
 
 ## Try it in a sandbox
 
-The sandbox lets you try afr on Linux without changing your own Claude Code settings:
+The sandbox lets you try AFR on Linux without changing your own Claude Code settings:
 
 ```sh
 scripts/sandbox-setup.sh            # creates ../afr-sandbox with project-level hooks
@@ -269,16 +269,16 @@ export AFR_HOME=$PWD/.afr-data
 
 The sandbox uses `.claude/settings.local.json`, so your global settings are untouched. It
 also sets `AFR_CAPTURE_RAW=1`, which keeps every raw hook payload under `.afr-data/raw/`
-for study (payloads afr cannot interpret are always kept). Raw captures contain full
+for study (payloads AFR cannot interpret are always kept). Raw captures contain full
 prompts and command output: keep them out of git.
 
 ## More documentation
 
-- [docs/threat-model.md](docs/threat-model.md): what afr protects, who it guards against,
+- [docs/threat-model.md](docs/threat-model.md): what AFR protects, who it guards against,
   and what it does not do.
 - [docs/highlight-rules.md](docs/highlight-rules.md): the highlight rules and custom rules.
 - [docs/findings.md](docs/findings.md): unexpected agent and harness behavior found in
-  testing, with evidence and what it means for afr.
+  testing, with evidence and what it means for AFR.
 - [docs/github-security.md](docs/github-security.md): how the repository and its Actions
   are secured.
 
@@ -289,7 +289,7 @@ prompts and command output: keep them out of git.
 ### How it works
 
 Claude Code calls `afr hook` at each step of a session and passes it the details as JSON.
-afr turns each call into normalized events and appends them to a per-session log with a
+AFR turns each call into normalized events and appends them to a per-session log with a
 hash chain. At each prompt, turn end, and session end it also reads new lines of Claude
 Code's transcript to recover what hooks do not carry: AI replies between tool calls, tool
 calls the harness rejected before any hook ran, and messages the harness injected.
@@ -335,10 +335,10 @@ Claude quota, so it is a manual end-to-end check, not part of CI.
 scripts/seeded-scenario.sh            # prints PASS / FAIL / SKIPPED per check
 ```
 
-- **PASS:** afr recorded it.
-- **FAIL:** afr missed something the transcript shows the model did.
+- **PASS:** AFR recorded it.
+- **FAIL:** AFR missed something the transcript shows the model did.
 - **SKIPPED:** the model never attempted that action (it is absent from Claude Code's
-  transcript too), which is model behavior, not an afr miss.
+  transcript too), which is model behavior, not an AFR miss.
 - **PENDING:** a check set as not yet required.
 
 Each highlight check names the rule and severity it expects. Deterministic coverage lives
@@ -356,7 +356,7 @@ and `%LOCALAPPDATA%\afr` on Windows.
 Permissions differ by platform:
 
 - **Linux:** files are created owner-only (mode 600) and directories mode 700.
-- **Windows:** afr does not set ACLs yet, so files inherit the permissions of the folder
+- **Windows:** AFR does not set ACLs yet, so files inherit the permissions of the folder
   they are in. Under the default `%LOCALAPPDATA%\afr` that normally means only you,
   SYSTEM, and Administrators. If `AFR_HOME` points outside your user profile (for example
   `C:\afr-data`), other local users may be able to read the logs, so keep it under your
