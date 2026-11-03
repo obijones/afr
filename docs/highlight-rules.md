@@ -1,10 +1,10 @@
 # Highlight rules
 
-afr tags recorded events with highlights so a reviewer knows where to look first. A
-highlight is a review priority, never a decision: afr does not block, delay, or change
+AFR tags recorded events with highlights so a reviewer knows where to look first. A
+highlight is a review priority, never a decision: AFR does not block, delay, or change
 anything the agent does. The rules live in `internal/rules`.
 
-Every rule maps to a published technique or guideline. The severities are afr's own,
+Every rule maps to a published technique or guideline. The severities are AFR's own,
 because no framework assigns severity to these behaviors; they were benchmarked against
 the Sigma, Elastic, and Splunk detection rule sets.
 
@@ -16,7 +16,7 @@ the Sigma, Elastic, and Splunk detection rule sets.
 | medium | Review in the normal pass | Sigma "medium": review frequently |
 | low | Worth seeing, rarely urgent | Used only for writes to temp folders |
 
-Rules marked **afr-adjusted** below sit above vendor norms on purpose: the actor is an AI
+Rules marked **AFR-adjusted** below sit above vendor norms on purpose: the actor is an AI
 agent reviewed one session at a time, where a false positive is cheap, rather than a human
 admin in fleet telemetry.
 
@@ -44,19 +44,19 @@ Bump `rules.Version` whenever a rule's matching or severity changes.
 | | | A bare encoded command (`powershell -enc`, `FromBase64String`) | medium | Sigma ladders generic `-enc` at medium |
 | 5 | `net.outbound_transfer` | Uploads: `curl -d/-F/-T`, POST or PUT, `wget --post-file`, `scp`/`rsync` to a remote, data piped to `nc`, PowerShell `-Body`/`-InFile`, cloud storage uploads | medium | ATT&CK [T1048](https://attack.mitre.org/techniques/T1048/), [T1567](https://attack.mitre.org/techniques/T1567/) |
 | | | The same, to file-sharing, paste, or webhook sites (0x0.st, transfer.sh, pastebin, webhook.site, Discord and Slack webhooks, ...) | high | Sigma rates uploads to file-sharing sites high |
-| 6 | `fs.write_outside_workspace` | Writes outside the project folder (file tools, redirects, `tee`, `cp`, `mv`, PowerShell content cmdlets, .NET file calls such as `[IO.File]::WriteAllText`) | medium (afr-adjusted) | OWASP ASI05 mitigation 4 (dedicated working directory) |
+| 6 | `fs.write_outside_workspace` | Writes outside the project folder (file tools, redirects, `tee`, `cp`, `mv`, PowerShell content cmdlets, .NET file calls such as `[IO.File]::WriteAllText`) | medium (AFR-adjusted) | OWASP ASI05 mitigation 4 (dedicated working directory) |
 | | | Writes to temp folders (`/tmp`, `$TMPDIR`, `%TEMP%`) | low | Caches and package stores are not flagged |
 | | | The workspace is the first working folder, plus folders the Claude desktop app moved the session to (its `change_directory` tool) and the session's scratchpad (`scratchpad_dir`); writes there are not flagged. A folder the agent reaches with `cd` does not count. | | Desktop findings F-012 |
-| 7 | `persist.autostart` | Shell rc and profile files, PowerShell profiles, cron, systemd units and `systemctl enable`, launchd, Run keys, scheduled tasks, new services | high (afr-adjusted) | ATT&CK [T1546.004](https://attack.mitre.org/techniques/T1546/004/), T1053.003, T1543, T1547.001; Elastic GenAI rc-write rule (high) |
-| 8 | `fs.destructive_command` | `rm -r/-f`, `Remove-Item -Recurse`, `rd /s` in the workspace; `find -delete`, `git clean -f`, `DROP TABLE` | medium (afr-adjusted) | ATT&CK [T1485](https://attack.mitre.org/techniques/T1485/) (names `rm`) |
+| 7 | `persist.autostart` | Shell rc and profile files, PowerShell profiles, cron, systemd units and `systemctl enable`, launchd, Run keys, scheduled tasks, new services | high (AFR-adjusted) | ATT&CK [T1546.004](https://attack.mitre.org/techniques/T1546/004/), T1053.003, T1543, T1547.001; Elastic GenAI rc-write rule (high) |
+| 8 | `fs.destructive_command` | `rm -r/-f`, `Remove-Item -Recurse`, `rd /s` in the workspace; `find -delete`, `git clean -f`, `DROP TABLE` | medium (AFR-adjusted) | ATT&CK [T1485](https://attack.mitre.org/techniques/T1485/) (names `rm`) |
 | | | Targets `/`, a home folder, or system folders; `dd` or `mkfs` on devices; cloud resource deletion (`terraform destroy`, `aws ... delete-*`, `kubectl delete`) | high | OWASP ASI02 and ASI05 (`rm -rf /`) |
 | 9 | `git.history_rewrite` | Force push, `+refspec`, remote branch delete, `reset --hard`, `filter-branch`/`filter-repo`, `reflog expire`, `branch -D`, `stash clear` | medium | Claude Code blocks force push and `reset --hard` by default; no ATT&CK technique |
 | 10 | `priv.escalation` | setuid/setgid (`chmod u+s`, `chmod 4755`), `setcap`, sudoers or `NOPASSWD` edits, adding users to admin groups | high | ATT&CK [T1548](https://attack.mitre.org/techniques/T1548/); NIST SP 800-53 AC-6(9) |
-| | | `sudo`, `su`, `doas`, `runas`, `chmod 777`, `chown`, `icacls ... Everyone:F` | medium (afr-adjusted) | ATT&CK [T1222.002](https://attack.mitre.org/techniques/T1222/002/) |
-| 11 | `agent.monitoring_tamper` | Writes or deletes of agent hook settings (`.claude/settings*.json`, `.github/hooks`, `~/.copilot`), transcripts, afr's data, audit config, or shell history; killing afr; clearing logs; `disableAllHooks` | high | ATT&CK [T1685](https://attack.mitre.org/techniques/T1685/), software S9043; ATLAS AML.T0081; NIST AU-9 |
+| | | `sudo`, `su`, `doas`, `runas`, `chmod 777`, `chown`, `icacls ... Everyone:F` | medium (AFR-adjusted) | ATT&CK [T1222.002](https://attack.mitre.org/techniques/T1222/002/) |
+| 11 | `agent.monitoring_tamper` | Writes or deletes of agent hook settings (`.claude/settings*.json`, `.github/hooks`, `~/.copilot`), transcripts, AFR's data, audit config, or shell history; killing AFR; clearing logs; `disableAllHooks` | high | ATT&CK [T1685](https://attack.mitre.org/techniques/T1685/), software S9043; ATLAS AML.T0081; NIST AU-9 |
 | 12 | `agent.permission_bypass` | The agent launches agents with bypass flags (`--dangerously-skip-permissions`, `--yolo`) or edits its own permission settings | high | ATLAS AML.T0081, AML.T0103; Five Eyes "Prohibit agents from modifying their own privileges" |
 | | | A session runs in `bypassPermissions` mode (flagged once per change) | medium | Elastic and Splunk rate human-launched bypass medium or lower |
-| 13 | `secrets.env_dump` | Dumping all environment variables: `env`, `printenv`, `set`, `export -p`, `/proc/*/environ`, `Get-ChildItem env:` | medium (afr-adjusted) | ATLAS AML.T0055 (names environment variables) |
+| 13 | `secrets.env_dump` | Dumping all environment variables: `env`, `printenv`, `set`, `export -p`, `/proc/*/environ`, `Get-ChildItem env:` | medium (AFR-adjusted) | ATLAS AML.T0055 (names environment variables) |
 | 14 | `net.reverse_shell_or_tunnel` | Reverse shells (`/dev/tcp`, `nc -e`, socket one-liners), ngrok-class tunnels, chisel | high | ATT&CK T1059.004, T1095, [T1572](https://attack.mitre.org/techniques/T1572/), ngrok S0508 |
 | | | `cloudflared tunnel`, VS Code and dev tunnels, `ssh -R` and `ssh -D`, Tailscale Funnel | medium | Vendors agree these have common legitimate use |
 | 15 | `exec.install_from_url` | Package installs from a URL, git repo, or custom index (`pip install git+...`, `-i`, `npm install github:...`) | medium | ATT&CK [T1195.001](https://attack.mitre.org/techniques/T1195/001/); ATLAS AML.T0060 |
@@ -94,13 +94,13 @@ reading `known_hosts` or public keys, and writes to caches and package stores.
   Commands inside parentheses or `$(...)` are not split out.
 - What a script does when it runs is invisible: a script that reads every file in a
   folder shows only as the command that ran it.
-- Rules 2 and 13 make afr's own log sensitive when they fire: the secret is in the
+- Rules 2 and 13 make AFR's own log sensitive when they fire: the secret is in the
   recorded content (the highlight detail is masked). Encryption at rest or optional
   redaction is on the roadmap.
 
 ## Customer rules
 
-Organizations add their own rules, and tune the built-in ones, with YAML files. afr reads
+Organizations add their own rules, and tune the built-in ones, with YAML files. AFR reads
 them on each hook call and runs them through the same engine as the built-in rules, so
 customer highlights are stored at write time, hash-chained, shown in replay, and covered
 by the replay's `*` diff. A full example: [examples/custom-rules.yaml](examples/custom-rules.yaml).

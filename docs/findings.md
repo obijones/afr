@@ -1,7 +1,7 @@
 # Findings from testing
 
-Behavior of AI agents and harnesses that afr testing revealed, with evidence and what it
-means for afr. Newest first.
+Behavior of AI agents and harnesses that AFR testing revealed, with evidence and what it
+means for AFR. Newest first.
 
 ## F-015: Claude Code scans subagent reports and flags instruction-shaped text (2026-10-12)
 
@@ -19,7 +19,7 @@ The subagent's own `SubagentHandback` call has the report without the notice, so
 adds it on delivery. The pattern name suggests a match on settings file names; here it was
 a plain file listing, so a false positive.
 
-**What it means for afr.**
+**What it means for AFR.**
 
 1. The notice is a harness signal worth keeping: Claude Code judged a subagent's output to
    look like instructions.
@@ -31,7 +31,7 @@ whole notice under the line as `harness warning`. The tag is given only when the
 own `SubagentHandback` text lacks the notice, so a subagent cannot forge a harness verdict
 by starting its report with one.
 
-## F-014: Removing afr's hooks stops recording, even in open conversations, and nothing shows it (2026-10-12)
+## F-014: Removing AFR's hooks stops recording, even in open conversations, and nothing shows it (2026-10-12)
 
 **What we saw.** Round 4 removed `hooks` from user settings shortly before 12:12 local, and
 they were not restored through 13:12. Claude Code writes a `stop_hook_summary` record into the
@@ -41,9 +41,9 @@ transcript after each turn, listing the hooks that ran. Every turn up to 10:26 l
 
 | Conversation | Unrecorded activity |
 | --- | --- |
-| `c708f94c` | a prompt at 12:12, in a conversation afr recorded at 10:17 |
-| `deb721ad` | a prompt at 13:10, in a conversation afr recorded at 10:24 |
-| `f3999212` | use at 13:12 of a conversation afr recorded as ended the day before |
+| `c708f94c` | a prompt at 12:12, in a conversation AFR recorded at 10:17 |
+| `deb721ad` | a prompt at 13:10, in a conversation AFR recorded at 10:24 |
+| `f3999212` | use at 13:12 of a conversation AFR recorded as ended the day before |
 | `6bc0a075`, `a8139cbc` | new conversations, never recorded at all |
 
 The processes were not restarted. Claude Code writes a `cost-state` record to the transcript
@@ -51,22 +51,22 @@ when a process exits: `f3999212`, which the app closed on 10-11 and reopened tod
 at each exit, while `c708f94c` and `deb721ad` have a single one at the very end. Their
 processes ran from before the hooks were removed until after the unrecorded prompts.
 
-**What it means for afr.**
+**What it means for AFR.**
 
 1. This confirms the open point in F-011: hook changes reach open conversations in both
    directions. Anyone who can edit user settings can stop recording without restarting
    anything.
-2. afr's output looks normal afterwards. `c708f94c` and `deb721ad` show as `idle` with one
-   turn, and `f3999212` shows as ended. Nothing in afr's own log can reveal turns it never
+2. AFR's output looks normal afterwards. `c708f94c` and `deb721ad` show as `idle` with one
+   turn, and `f3999212` shows as ended. Nothing in AFR's own log can reveal turns it never
    saw.
-3. The transcripts can. Each turn's `stop_hook_summary.hookInfos` says whether afr ran, and
-   a transcript with no afr log at all is a conversation afr missed. The planned report
-   coverage check (report R2) should compare transcripts against afr logs and use this
-   record to show exactly which turns ran without afr.
+3. The transcripts can. Each turn's `stop_hook_summary.hookInfos` says whether AFR ran, and
+   a transcript with no AFR log at all is a conversation AFR missed. The planned report
+   coverage check (report R2) should compare transcripts against AFR logs and use this
+   record to show exactly which turns ran without AFR.
    **Addressed** on branch `feat/coverage`: `afr coverage`, the report, and `coverage.json`
-   in exports compare transcripts with afr's logs prompt by prompt. Run over the round 4
-   captures it finds every gap above, plus two round 3 CLI conversations afr never saw.
-4. Organizations should put afr's hooks in managed settings, which users cannot edit.
+   in exports compare transcripts with AFR's logs prompt by prompt. Run over the round 4
+   captures it finds every gap above, plus two round 3 CLI conversations AFR never saw.
+4. Organizations should put AFR's hooks in managed settings, which users cannot edit.
 5. An agent could do the same. The round's removal command wrote the file with
    `[IO.File]::WriteAllText`, which the rules did not see as a write, so an agent running it
    would not have been flagged. **Fixed** on branch `fix/round4-findings` (rules version
@@ -88,14 +88,14 @@ Round 3 tested the Claude desktop app's Code tab on Windows with hooks in user s
 
 The first real `PermissionDenied` payload came from desktop: an environment variable dump,
 `reason: "[Credential Materialization]"`, with the documented fields (`tool_name`,
-`tool_input`, `tool_use_id`, `reason`). afr recorded it as `denied by auto mode`; it is now a
+`tool_input`, `tool_use_id`, `reason`). AFR recorded it as `denied by auto mode`; it is now a
 test fixture (`testdata/claude-code/2.1.295-windows-desktop/`), which closes F-004's open item.
 
-Payloads also carry fields afr does not record yet: `effort.level` on most events,
+Payloads also carry fields AFR does not record yet: `effort.level` on most events,
 `mcp_server` on tool calls, `session_title` on prompts and resumed starts, and on a resumed
 start `context_tokens`, `estimated_cache_write_usd`, and `seconds_since_last_response`.
 
-**What it means for afr.** The starting model of a desktop session comes only from the
+**What it means for AFR.** The starting model of a desktop session comes only from the
 transcript. Coverage claims must say "Code tab", never "Claude desktop". Collecting desktop
 transcripts on Windows needs long-path support: subagent transcript paths under a
 scratch-workspace project folder pass 260 characters, and Windows PowerShell 5.1
@@ -109,20 +109,20 @@ scratch-workspace project folder pass 260 characters, and Windows PowerShell 5.1
 folder moves when the turn ends. The app then copied the scratch files into the new folder
 itself and told Claude through a note added to the next prompt (F-008).
 
-**What it means for afr.**
+**What it means for AFR.**
 
-1. The move is visible in the hooks, no transcript needed: afr can make the new folder part
+1. The move is visible in the hooks, no transcript needed: AFR can make the new folder part
    of the workspace when that call succeeds. Today every write there is flagged
    `fs.write_outside_workspace` (medium), a false positive.
-2. Files the app copies are not tool calls, so afr has no record of them being created.
-3. A session that afr joined late (F-011) has the opposite problem: its workspace is the
+2. Files the app copies are not tool calls, so AFR has no record of them being created.
+3. A session that AFR joined late (F-011) has the opposite problem: its workspace is the
    final folder, so writes in the original scratch folder were flagged.
 
 **Fixed** on branch `fix/desktop-rules`: the rules' workspace now includes folders the app
 moved the session to (a successful `change_directory`) and the session's scratchpad
 (`scratchpad_dir`, recorded once per session), tracked the same way when recording and in
 replay. Recovered transcript events carry the folder the session was in at the time, so a
-session afr joins late is judged against its original folder. Files the app copies itself
+session AFR joins late is judged against its original folder. Files the app copies itself
 stay invisible.
 
 **Round 4 (2026-10-12).** Two more details:
@@ -131,28 +131,28 @@ stay invisible.
    (Desktop, Documents, Downloads) it should create a new folder inside it and move there,
    "the only folder you create yourself". Claude creates that folder before the move, while
    the session is still in its scratch folder, so `fs.write_outside_workspace` (medium)
-   flags it. That is correct: the write is outside the workspace at that moment, and afr
+   flags it. That is correct: the write is outside the workspace at that moment, and AFR
    cannot know a move will follow. (Until rules version 3 this call was missed, because
    Claude wrapped `New-Item` in an `if` block; see `docs/highlight-rules.md`.)
 2. After a move the harness tells Claude that "project settings (permission rules, hooks),
    project MCP servers, and project skills now come from" the new folder. Per that
    note (not tested), moving a conversation into a folder with its own
-   `.claude\settings.json` starts running that folder's hooks. afr's hooks are in user settings and are not affected.
+   `.claude\settings.json` starts running that folder's hooks. AFR's hooks are in user settings and are not affected.
 
 ## F-011: Hook changes reach sessions that are already running (2026-10-11)
 
-**What we saw.** Desktop conversation `fcb60a58` started at 11:41, before afr's hooks were in
-user settings. When the app exited at 16:26, its `SessionEnd` hook ran afr, and afr
+**What we saw.** Desktop conversation `fcb60a58` started at 11:41, before AFR's hooks were in
+user settings. When the app exited at 16:26, its `SessionEnd` hook ran AFR, and AFR
 recovered the whole conversation from the transcript: 28 tool calls, replies, and 2
 highlights. The running process had picked up the new hook settings.
 
-**What it means for afr.**
+**What it means for AFR.**
 
-1. Good for rollout: sessions already running when afr is installed still get recorded, at
+1. Good for rollout: sessions already running when AFR is installed still get recorded, at
    their next hook event.
 2. Security: if adding hooks reaches running sessions, removing them presumably does too.
    Round 4 confirmed it (F-014). Managed settings are the answer for organizations.
-3. Gap: afr labels everything recovered without a hook as harness activity, so this
+3. Gap: AFR labels everything recovered without a hook as harness activity, so this
    session's real prompts show as "injected by the harness", its tool calls as "no hook
    ran", and it counts 0 turns. Recovered events earlier than the first hook event should be
    labeled as recorded late, with real prompts counted as turns.
@@ -160,7 +160,7 @@ highlights. The running process had picked up the new hook settings.
 **Fixed** on branch `feat/report-pr-c`: events recovered from before the session's first
 hook event are treated as recorded late. Their user prompts count as turns (harness text and
 `isMeta` prompts, now recorded as `meta`, do not), their calls are not marked "no hook ran",
-and the replay and report mark where afr started recording.
+and the replay and report mark where AFR started recording.
 
 ## F-010: How desktop sessions end and resume (2026-10-11)
 
@@ -168,16 +168,16 @@ and the replay and report mark where afr started recording.
 | --- | --- |
 | `/exit` | not a desktop command ("not valid"), nothing |
 | Archive a conversation | `SessionEnd`, reason `other` |
-| Delete a conversation | `SessionEnd`, reason `other`; afr's log survives and verifies |
+| Delete a conversation | `SessionEnd`, reason `other`; AFR's log survives and verifies |
 | Close the window | nothing: the app keeps running, with one `claude` process per open conversation |
 | Exit from the tray icon | `SessionEnd`, reason `other`, for every open conversation |
 | Reopen an ended conversation | `SessionStart`, `source: resume`, same session id |
 
-**What it means for afr.** A desktop session that shows `open` is usually idle, not cut off,
+**What it means for AFR.** A desktop session that shows `open` is usually idle, not cut off,
 so the report should judge desktop sessions by last activity. The end reason cannot tell
 archive, delete, and quit apart. Resume keeps one log per conversation.
 
-**Fixed** on branch `feat/report-pr-c`: afr records the app (`entrypoint`) once per
+**Fixed** on branch `feat/report-pr-c`: AFR records the app (`entrypoint`) once per
 session, and a desktop session with no end shows as `idle <time>` in `afr sessions` and the
 report instead of being flagged as open. Older logs are recognized as desktop by their
 scratch-workspaces folder.
@@ -191,7 +191,7 @@ the report as a new prompt that fires `UserPromptSubmit`, beginning
 `<agent-message from="<agent id>">` and `[Subagent hand-back]`, with a frame saying the text
 is model output, not the user's. Task notifications arrive the same way.
 
-**What it means for afr.** afr counts these as user turns (a session with 2 real prompts
+**What it means for AFR.** AFR counts these as user turns (a session with 2 real prompts
 showed 4) and shows the subagent as finishing with an empty result. Fix: treat a prompt as a
 hand-back only when its `from` id matches a subagent of the same session (a user can type
 the same text), label it as delivered by the harness, and show the hand-back message as the
@@ -210,7 +210,7 @@ work, how to call `change_directory` and `request_directory`, and lists the proj
 recently used on the machine. After a move, the next prompt carries a similar note listing
 the files the app copied.
 
-**What it means for afr.** The replay summary shows the note instead of what the user
+**What it means for AFR.** The replay summary shows the note instead of what the user
 typed. Fix: summarize the user's words and show the note separately as harness-added text;
 keep the full prompt in the log. The note is also evidence of what context the app gave
 the model, including other project folders on the machine, so it stays in the record.
@@ -225,7 +225,7 @@ the model, including other project folders on the machine, so it stays in the re
 another topic comes later in the same conversation, so its title "Productivity
 suggestions" is accurate. The deleted conversation (`868903a5`, released at 11:36) was a
 separate, earlier one. The tester remembered the order differently; the logs are the record.
-afr recorded nothing wrong here.
+AFR recorded nothing wrong here.
 
 ## F-006: A session start with nothing after it, 8 seconds before the CLI session (2026-10-11)
 
@@ -240,7 +240,7 @@ process in the last folder used, which fires `SessionStart`, and discards it whe
 conversation opens in a new scratch folder. If so, desktop does run hooks from a project's
 settings. To confirm: open the desktop app alone and watch for a lone start.
 
-**What it means for afr.** A session with only a start and no transcript is noise, not a
+**What it means for AFR.** A session with only a start and no transcript is noise, not a
 gap, but `afr sessions` lists it as `open` forever. Possible fix: show such sessions as
 `empty` and leave them out of gap counts in the digest.
 
@@ -252,10 +252,10 @@ stays unexplained.
 
 ## F-005: Desktop app conversations were not recorded: hooks were registered for one project only (2026-10-11)
 
-**What we saw.** The test settings put afr's hooks in
+**What we saw.** The test settings put AFR's hooks in
 `C:\Users\<user>\afr-test\.claude\settings.json`, which applies only to sessions in that
 folder. The CLI session there recorded fully (4 turns, 63 tool calls, `SessionEnd` reason
-`prompt_input_exit`). Three other sessions that day produced no afr record at all:
+`prompt_input_exit`). Three other sessions that day produced no AFR record at all:
 
 | Session | App (transcript `entrypoint`) | Folder |
 | --- | --- | --- |
@@ -270,19 +270,19 @@ default: each new conversation starts in a fresh scratch folder under
 Deleting a desktop conversation removes its transcript and leaves only
 `<id>.desktop-released.json` (`"reason": "delete"`), so nothing is left to recover from.
 
-**What it means for afr.**
+**What it means for AFR.**
 
 1. **Register hooks in user settings** (`%USERPROFILE%\.claude\settings.json`, or
    `~/.claude/settings.json`), not in a project, so every session in every folder runs them.
    For enterprises, managed settings (phase E). Project settings are only for sandboxes.
-2. **Deleting a conversation does not delete afr's record**, once hooks run: afr writes each
-   event when it happens, into its own folder. What afr cannot get back after a deletion is
+2. **Deleting a conversation does not delete AFR's record**, once hooks run: AFR writes each
+   event when it happens, into its own folder. What AFR cannot get back after a deletion is
    anything it had not yet read from the transcript (replies between the last hook and the
    deletion).
-3. **Moved desktop sessions:** afr's workspace for the rules is the first folder seen, so
+3. **Moved desktop sessions:** AFR's workspace for the rules is the first folder seen, so
    after a move into `Documents\...` every write there would be flagged as outside the
    workspace. Consider following the `relocated` record from the transcript.
-4. **Coverage check:** comparing transcripts under `~/.claude/projects` with afr's sessions
+4. **Coverage check:** comparing transcripts under `~/.claude/projects` with AFR's sessions
    would have shown all three missing sessions. The threat model already lists this as the
    answer to removed hooks; it belongs in the digest.
 
@@ -295,18 +295,18 @@ does not run Claude Code and is not covered.
 
 **What we saw.** In the first native Windows session (Claude Code 2.1.296, interactive CLI,
 `permission_mode: "auto"`), two PowerShell calls looking for `csc.exe` got a `PreToolUse`
-hook and nothing after it. afr's replay shows them as "no result (refused, interrupted, or
+hook and nothing after it. AFR's replay shows them as "no result (refused, interrupted, or
 failed)". The AI then said the commands were "blocked by the auto-mode classifier".
 
 **Explanation from the documentation.** `PostToolUse` "Runs immediately after a tool
 completes successfully", so a denied call never fires it. Claude Code has a separate
 `PermissionDenied` hook that "Runs when auto mode denies a tool call" and only in auto
-mode ([hooks](https://code.claude.com/docs/en/hooks.md)). afr's suggested hook config did not
+mode ([hooks](https://code.claude.com/docs/en/hooks.md)). AFR's suggested hook config did not
 register it.
 
-**What it means for afr.** Gap: register `PermissionDenied` (and `PostToolUseFailure`) and
+**What it means for AFR.** Gap: register `PermissionDenied` (and `PostToolUseFailure`) and
 record the denial as the call's result, so the replay says "denied by auto mode" instead of
-guessing. The transcript also holds the denial, but afr only recovers results for calls no
+guessing. The transcript also holds the denial, but AFR only recovers results for calls no
 hook saw.
 
 **Fixed** on branch `fix/windows-capture-gaps`: `PermissionDenied` becomes the call's
@@ -325,8 +325,8 @@ each folder", "yes, add a top-level README", "initialize a git repo with a .giti
 binaries", and once "Didn't produce a suggestion: the next step touches building/running an
 executable...". The next user prompts in turns 2 and 3 were exactly those texts. Three
 minutes after the last turn, one more `SubagentStop` carried a recap: "You're building the
-multi-folder afr-test project; folders, per-folder READMEs, and a top-level README are
-done...". afr's replay showed all of these as `SUBAGENT finished: ...`, as if a subagent had
+multi-folder `afr-test` project; folders, per-folder READMEs, and a top-level README are
+done...". AFR's replay showed all of these as `SUBAGENT finished: ...`, as if a subagent had
 done that work.
 
 **Explanation from the documentation.**
@@ -347,7 +347,7 @@ done that work.
 model suggested, submitted by the user. The docs do not say whether an accepted suggestion
 is marked in hook payloads or the transcript.
 
-**What it means for afr.**
+**What it means for AFR.**
 
 1. Gap: label harness background agents (empty `agent_type`, no matching `Agent` call) as
    such, not as subagent work, and say what they produced (a suggested prompt, a recap).
@@ -361,7 +361,7 @@ marked `(accepted suggestion)`, and the seeded scenario no longer counts them as
 ## F-002: Opus 5.5's classifier switched an interactive session to Opus 4.8 over a calc.exe launcher (2026-10-10)
 
 **What we saw.** Same Windows session, on `claude-opus-5-5`. Turn 4 asked for "an example
-windows binary that when executed opens calc.exe", the classic harmless demo. afr recorded a
+windows binary that when executed opens calc.exe", the classic harmless demo. AFR recorded a
 notice ("Opus 5.5's safeguards stopped the response above"), the harness-injected companion
 message, and a `model_refusal_fallback` warning: category `cyber`, `claude-opus-5-5 ->
 claude-opus-4-8` for the session. Opus 4.8 answered and wrote the C# source and a build
@@ -371,7 +371,7 @@ script; the replay header reads `model: claude-opus-5-5, claude-opus-4-8`.
 of the session when `switchModelsOnFlag` is on. The notice text itself says Opus 5.5's
 safeguards "can sometimes flag non-cybersecurity work".
 
-**What it means for afr.** The notice capture built after F-001 worked on Windows unchanged.
+**What it means for AFR.** The notice capture built after F-001 worked on Windows unchanged.
 F-001's open question about interactive sessions gets part of an answer: in an interactive
 session the switch was announced once "for the session" and later replies came from Opus
 4.8. The session had only one turn after the switch, so persistence over many turns is still
@@ -382,7 +382,7 @@ unverified.
 **What we saw.** In a seeded-scenario run requested on `claude-sonnet-5-5` (Claude Code
 2.1.296, `claude -p` with `--resume` per turn), turns 1 to 3 ran on `claude-sonnet-5-5`.
 From turn 4 (the localhost `curl | sh` and `base64 -d | sh` prompt) every turn ran on
-`claude-sonnet-5`. afr's new `model` field surfaced it: the replay header read
+`claude-sonnet-5`. AFR's new `model` field surfaced it: the replay header read
 `model: claude-sonnet-5-5, claude-sonnet-5`.
 
 **Evidence in Claude Code's transcript** (session `b689fd1a`):
@@ -432,10 +432,10 @@ so availability does not mean use. ([Advisor](https://code.claude.com/docs/en/ad
 - The docs say non-interactive mode ends a flagged turn with a refusal "instead" of the
   prompt; here it switched. Likely because `switchModelsOnFlag: true` needs no prompt.
 
-**What it means for afr.**
+**What it means for AFR.**
 
-1. The `model` field works and is worth keeping: it was the only visible sign in afr.
-2. **Gap: afr did not record harness notices.** Fixed on branch `fix/harness-notices`:
+1. The `model` field works and is worth keeping: it was the only visible sign in AFR.
+2. **Gap: AFR did not record harness notices.** Fixed on branch `fix/harness-notices`:
    `system` records at notice, warning, or error level, and every `model_refusal_fallback`,
    become `harness.notice` events with the category and the original and fallback model.
    Replay shows `[WARNING] safeguards flagged this (cyber): claude-sonnet-5-5 ->
@@ -447,6 +447,6 @@ so availability does not mean use. ([Advisor](https://code.claude.com/docs/en/ad
    transcript (empty until the first transcript read in a session), the replay header
    shows it, and a version change mid-session becomes a `harness.notice`.
 5. For the seeded scenario, Sonnet 5.5's classifier blocks the threat turns, so Haiku stays
-   the default; a Sonnet run is itself a good test of how afr shows a model switch.
+   the default; a Sonnet run is itself a good test of how AFR shows a model switch.
 6. The classifier is not deterministic for the same prompt: a later two-turn Sonnet session
    with the same `curl | sh` prompt (but less security-test history) was not flagged.
