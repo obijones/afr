@@ -1,6 +1,6 @@
 # AFR threat model (v0.1 draft)
 
-_Status: draft, updated 2026-10-10. Covers AFR v0.1: Claude Code on Linux and Windows, local logs only._
+_Status: draft, updated 2026-11-08. Covers AFR v0.1: Claude Code on Linux and Windows, local logs only._
 
 AFR is a **recorder, not a control**. It writes a complete, verifiable log of each AI agent
 session so a reviewer can see what the agent was asked, what it said, and what it ran. It
@@ -47,8 +47,8 @@ because the harness runs them, on a machine the user controls.
 | User removes hooks | `afr coverage` and the report compare Claude Code transcripts with AFR's logs: conversations with no log, prompts AFR missed, and turns that ended without AFR's hook (F-014). Removal reaches conversations already open | Advisory only: transcripts are not tamper-evident, the same user can edit or delete them, and they expire after about 30 days. Managed settings; central shipping (Phase 5) | Structural: coverage check |
 | User or process edits or deletes the log | Per-session hash chain over metadata and `content_hash`; `afr verify` | Not tamper-proof: an owner can rewrite the whole chain. Signing and central store later | Structural: `afr verify` |
 | Another local user reads logs | Owner-only files (600 on Linux) | Windows owner-only ACLs; encryption at rest | n/a |
-| Terminal escapes, `\r`, or bidi overrides in captured text | Replay shows them as visible escapes | Same rule for dashboard and export | n/a |
-| AFR crashes or stalls the agent | Every hook exits 0, prints nothing, recovers panics; 5 s stdin and 2 s lock deadlines; payloads it cannot store are kept raw | Windows latency unmeasured | n/a |
+| Terminal escapes, `\r`, or bidi overrides in captured text | Replay shows them as visible escapes | Same handling in the HTML report (captured text is drawn as text) and the export's replay files | n/a |
+| AFR crashes or stalls the agent | Every hook exits 0, prints nothing, recovers panics; 5 s stdin and 2 s lock deadlines; payloads it cannot store are kept raw | CI times the hook on Linux and Windows (p95 under 50 ms); slow disks or antivirus are not measured | n/a |
 | Copilot CLI loads Claude Code hook settings | Recorded, but labeled `claude-code` | Detect harness from payload shape (Phase 2) | n/a |
 
 ## Not in scope
@@ -64,14 +64,16 @@ because the harness runs them, on a machine the user controls.
 
 ## Assumptions
 
-- The harness runs hooks as documented (verified for Claude Code 2.1.295 on Linux only).
+- The harness runs hooks as documented (verified for Claude Code 2.1.295 and 2.1.296 on Linux,
+  the 2.1.296 interactive CLI on Windows, and the Windows desktop app; see docs/findings.md).
 - OS file permissions are enforced and the clock is roughly right (events sort by time).
 - The AFR binary on disk is the one that was installed (code signing is planned before team rollout).
 
 ## Residual risks to revisit
 
 - Logs are unredacted by design: a stolen log is a stolen conversation, including secrets.
-- Interactive sessions and Windows are unobserved; both may change what is captured.
+- Each new Claude Code release can change hook payloads or transcripts; new versions are
+  checked against the fixtures in testdata/ as they are observed.
 - Highlight rules match command text, so obfuscated commands can evade them. Rules aid
   review; they are not detection guarantees. Rules, severities (high, medium, low), and
   their framework grounding: [highlight-rules.md](highlight-rules.md).

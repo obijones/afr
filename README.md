@@ -126,7 +126,7 @@ afr report --since 7d        # one web page to review the last week
 
 | Command | What it does |
 | --- | --- |
-| `afr sessions` | Lists sessions, most recent first: status, turns, tool calls, highlights by severity, app, folder, id. |
+| `afr sessions` | Lists the 20 most recent sessions (`-n 50` for more, `-n 0` for all): start and last activity, status, turns, tool calls, highlights by severity, harness notices, app, model (a `+` means more than one answered), user and computer, folder, id. |
 | `afr replay 3394` | Shows one session as a conversation. Any unique start of the id works. |
 | `afr replay --full 3394` | The same, with complete prompts, replies, tool inputs, and outputs. |
 | `afr replay -o s.txt 3394` | Writes the replay to a file (UTF-8) for sharing. |
@@ -163,7 +163,7 @@ Some lines are marked so they are not mistaken for ordinary activity:
 | `app note added` | A note the desktop app added before a prompt. |
 | `HANDBACK` | A subagent's report delivered back to the conversation. It is not a turn, and is recognized only when its sender is a subagent of the same session. If Claude Code flagged it as instruction-shaped, the line says `(harness flagged: ...)`. |
 | `NOTICE` | A harness notice, such as a safety classifier stopping a response and switching models. |
-| `NOTE` | Where recording began, when AFR's hooks were added in the middle of a session. The earlier part is recovered from the transcript. |
+| `NOTE` | Where recording began, when AFR's hooks were added in the middle of a session (the earlier part is recovered from the transcript). Also AFR's own errors, and other hook events such as `PreCompact` or `Notification` if they are registered. |
 | `*` | A highlight from today's rules on an older session, shown without changing the log. |
 
 On Windows, use `-o` rather than piping to `Out-File`: Windows PowerShell 5.1 re-decodes
@@ -194,7 +194,7 @@ allowed to see them.
 ## Export
 
 `afr export` writes one zip (default `afr-export-<time>.zip`, or `-o FILE.zip`). For each
-session it holds the log, its state file, a full replay (`replay-<id>.txt`), and any raw
+session it holds the log, its state file, a full replay (`replay-<first 8 characters of the id>.txt`), and any raw
 payloads. It also holds:
 
 - `afr-errors.log`: the whole error log, not only these sessions;
@@ -220,7 +220,7 @@ transcripts with AFR's logs, prompt by prompt, and reports each conversation as:
 | --- | --- |
 | `complete` | AFR recorded every prompt as it happened. |
 | `late` | Everything is in AFR's log, but some of it was recovered from the transcript afterwards. |
-| `partial` | Some prompts are missing from AFR's log; their times are listed. |
+| `partial` | Some prompts a person typed are missing from AFR's log; their times are listed. Harness messages AFR has not recovered yet do not count. |
 | `missed` | AFR has no log of the conversation at all. |
 
 It also counts turns that ended while other hooks ran but AFR's did not. Slash commands

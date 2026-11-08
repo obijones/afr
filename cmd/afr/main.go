@@ -14,11 +14,11 @@ const usage = `usage: afr <command>
 commands:
   hook      read one agent hook payload on stdin and record it (always exits 0)
   sessions  list recorded sessions, most recent first: afr sessions [-n N] [--full-ids]
-  replay    print one session as a conversation: afr replay [--full] [-o FILE] <session-id or prefix>
+  replay    print one session as a conversation: afr replay [--full] [--width N] [-o FILE] <session-id or prefix>
   verify    check a session log's sequence numbers and hash chain: afr verify <session-id or prefix>
-  export    zip sessions for review elsewhere: afr export [-o FILE.zip] <session-id or prefix> [...] | --last N
-  report    one HTML page for reviewing many sessions: afr report [-o FILE.html] [--since 7d] [session-id ...]
-  coverage  find conversations and prompts afr did not record: afr coverage [--since 7d] [--transcripts DIR]
+  export    zip sessions for review elsewhere: afr export [-o FILE.zip] [--transcripts DIR] [--no-coverage] <session-id or prefix> [...] | --last N
+  report    one HTML page for reviewing many sessions: afr report [-o FILE.html] [--since 7d] [--transcripts DIR] [--no-coverage] [session-id ...]
+  coverage  find conversations and prompts afr did not record: afr coverage [--since 7d] [--transcripts DIR] [--json]
   rules     list, check, and test highlight rules: afr rules <list | check | test>
   version   print the afr version
 `

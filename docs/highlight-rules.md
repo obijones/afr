@@ -48,7 +48,7 @@ Bump `rules.Version` whenever a rule's matching or severity changes.
 | | | Writes to temp folders (`/tmp`, `$TMPDIR`, `%TEMP%`) | low | Caches and package stores are not flagged |
 | | | The workspace is the first working folder, plus folders the Claude desktop app moved the session to (its `change_directory` tool) and the session's scratchpad (`scratchpad_dir`); writes there are not flagged. A folder the agent reaches with `cd` does not count. | | Desktop findings F-012 |
 | 7 | `persist.autostart` | Shell rc and profile files, PowerShell profiles, cron, systemd units and `systemctl enable`, launchd, Run keys, scheduled tasks, new services | high (AFR-adjusted) | ATT&CK [T1546.004](https://attack.mitre.org/techniques/T1546/004/), T1053.003, T1543, T1547.001; Elastic GenAI rc-write rule (high) |
-| 8 | `fs.destructive_command` | `rm -r/-f`, `Remove-Item -Recurse`, `rd /s` in the workspace; `find -delete`, `git clean -f`, `DROP TABLE` | medium (AFR-adjusted) | ATT&CK [T1485](https://attack.mitre.org/techniques/T1485/) (names `rm`) |
+| 8 | `fs.destructive_command` | `rm -r/-f`, `Remove-Item -Recurse`, `rd /s` on any other path; `find -delete`, `git clean -f`, `DROP TABLE` | medium (AFR-adjusted) | ATT&CK [T1485](https://attack.mitre.org/techniques/T1485/) (names `rm`) |
 | | | Targets `/`, a home folder, or system folders; `dd` or `mkfs` on devices; cloud resource deletion (`terraform destroy`, `aws ... delete-*`, `kubectl delete`) | high | OWASP ASI02 and ASI05 (`rm -rf /`) |
 | 9 | `git.history_rewrite` | Force push, `+refspec`, remote branch delete, `reset --hard`, `filter-branch`/`filter-repo`, `reflog expire`, `branch -D`, `stash clear` | medium | Claude Code blocks force push and `reset --hard` by default; no ATT&CK technique |
 | 10 | `priv.escalation` | setuid/setgid (`chmod u+s`, `chmod 4755`), `setcap`, sudoers or `NOPASSWD` edits, adding users to admin groups | high | ATT&CK [T1548](https://attack.mitre.org/techniques/T1548/); NIST SP 800-53 AC-6(9) |
@@ -60,7 +60,7 @@ Bump `rules.Version` whenever a rule's matching or severity changes.
 | 14 | `net.reverse_shell_or_tunnel` | Reverse shells (`/dev/tcp`, `nc -e`, socket one-liners), ngrok-class tunnels, chisel | high | ATT&CK T1059.004, T1095, [T1572](https://attack.mitre.org/techniques/T1572/), ngrok S0508 |
 | | | `cloudflared tunnel`, VS Code and dev tunnels, `ssh -R` and `ssh -D`, Tailscale Funnel | medium | Vendors agree these have common legitimate use |
 | 15 | `exec.install_from_url` | Package installs from a URL, git repo, or custom index (`pip install git+...`, `-i`, `npm install github:...`) | medium | ATT&CK [T1195.001](https://attack.mitre.org/techniques/T1195/001/); ATLAS AML.T0060 |
-| 16 | `exec.script_policy_bypass` | PowerShell with the execution policy bypassed (`-ExecutionPolicy Bypass`, `-ep bypass`, `Set-ExecutionPolicy Unrestricted`); a script run from a temp folder outside the workspace and the session's scratchpad (`bash /tmp/x.sh`, `& $env:TEMP\x.ps1`, `powershell -File`) | medium | ATT&CK [T1059.001](https://attack.mitre.org/techniques/T1059/001/); Sigma [Change PowerShell Policies to an Insecure Level](https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_set_policies_to_unsecure_level.yml) is medium; seen in desktop testing (docs/findings.md F-013) |
+| 16 | `exec.script_policy_bypass` | PowerShell with the execution policy bypassed (`-ExecutionPolicy Bypass`, `-ep bypass`, `Set-ExecutionPolicy Unrestricted`); a script run from a temp folder outside the workspace and the session's scratchpad (`bash /tmp/x.sh`, `& $env:TEMP\x.ps1`, `powershell -File`) | medium | ATT&CK [T1059.001](https://attack.mitre.org/techniques/T1059/001/); Sigma [Change PowerShell Policies to an Insecure Level](https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_set_policies_to_unsecure_level.yml) is medium; seen in desktop app testing |
 
 Sources for the mappings beyond the links: [MITRE ATLAS](https://atlas.mitre.org/),
 [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/),
@@ -91,7 +91,7 @@ reading `known_hosts` or public keys, and writes to caches and package stores.
   indirection is not.
 - Commands are split on `|`, `&&`, `;`, newlines, and block braces, so commands inside
   PowerShell `if`, `else`, and loop bodies (`if (...) { New-Item ... }`) and after shell
-  keywords (`then rm -rf ...`) are seen (rules version 3; earlier versions missed them).
+  keywords (`then rm -rf ...`) are seen (since rules version 3; earlier versions missed them).
   Commands inside parentheses or `$(...)` are not split out.
 - What a script does when it runs is invisible: a script that reads every file in a
   folder shows only as the command that ran it.
@@ -157,7 +157,7 @@ afr rules list                 # every active rule, its severity, and its source
 never stops. Problems go to `afr-errors.log` once per change, not on every call. A
 misspelled field is an error rather than a silently ignored rule. Limits: 32 files,
 256 KB per file, 500 rules. Each customer rule set changes the stamped rules version
-(for example `1+e580cfcd`, a hash of the files), so a reviewer can see which rules
+(for example `4+4d5df45a`: the built-in version plus a hash of the files), so a reviewer can see which rules
 evaluated an event. Fifty customer rules measured about 3 to 7 ms extra per hook call.
 
 ## Changing built-in rules
