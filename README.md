@@ -379,3 +379,7 @@ Inside the data directory:
 
 Test fixtures in `testdata/claude-code/<version>/` are real payloads with user names
 scrubbed.
+
+## License
+
+AFR is licensed under the [Apache License 2.0](LICENSE). Copyright 2026 obijones.
