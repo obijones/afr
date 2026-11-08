@@ -7,6 +7,8 @@ that someone can look back later and see exactly what happened.
 It only watches and writes things down. It never blocks, slows down, or changes what the
 AI does.
 
+https://github.com/user-attachments/assets/cbbc98d6-ced7-4ff6-b309-175d50097d8d
+
 ## Why it exists
 
 AI coding assistants such as Claude Code no longer just suggest text. They run commands,
